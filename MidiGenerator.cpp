@@ -1,7 +1,7 @@
 #include "MidiGenerator.h"
 #include "IPlug_include_in_plug_src.h"
 
-MidiGeneratorPlugin::MidiGeneratorPlugin(const InstanceInfo& info)
+MidiGenerator::MidiGenerator(const InstanceInfo& info)
 : Plugin(info, MakeConfig(0, 0)) // 0 parameters, 0 presets for now
 {
     // Initialize our track with defaults
@@ -16,13 +16,13 @@ MidiGeneratorPlugin::MidiGeneratorPlugin(const InstanceInfo& info)
     rebuildTrackPattern(track);
 }
 
-void MidiGeneratorPlugin::OnReset()
+void MidiGenerator::OnReset()
 {
     last16thNote = -1;
     activeNotes.clear();
 }
 
-void MidiGeneratorPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
+void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
     // 1. Process Note Offs for currently active notes
     for (auto it = activeNotes.begin(); it != activeNotes.end(); )

@@ -1,16 +1,15 @@
 #pragma once
 
 #include "IPlug_include_in_plug_hdr.h"
-#include "MidiGenerator.h"
-#include <vector>
+#include "MidiGeneratorLogic.h"
 
 using namespace iplug;
 using namespace igraphics;
 
-class MidiGeneratorPlugin final : public Plugin
+class MidiGenerator final : public Plugin
 {
 public:
-    MidiGeneratorPlugin(const InstanceInfo& info);
+    MidiGenerator(const InstanceInfo& info);
 
     // This replaces JUCE's prepareToPlay
     void OnReset() override;
