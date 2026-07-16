@@ -45,17 +45,14 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     }
 
     // 2. Ask Logic Pro's host about the current time/transport state
-    ITimeInfo timeInfo;
-    if (GetTimeInfo(timeInfo))
-    {
-        // If the DAW is stopped, reset our counters
-        if (!timeInfo.mTransportIsRunning) {
-            last16thNote = -1;
-            return;
-        }
+    // If the DAW is stopped, reset our counters
+    if (!GetTransportIsRunning()) {
+        last16thNote = -1;
+        return;
+    }
 
-        double bpm = timeInfo.mTempo;
-        double ppqPosition = timeInfo.mPPQPos;
+    double bpm = GetTempo();
+    double ppqPosition = GetPPQPos();
 
         // PPQ (Pulses Per Quarter note). 1 PPQ = 1 beat.
         // Therefore, 16th notes happen every 0.25 PPQ.
@@ -91,5 +88,4 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
                 }
             }
         }
-    }
 }
