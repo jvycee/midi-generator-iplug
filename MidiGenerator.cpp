@@ -1,4 +1,4 @@
-#include "MidiGeneratorPlugin.h"
+#include "MidiGenerator.h"
 #include "IPlug_include_in_plug_src.h"
 
 MidiGeneratorPlugin::MidiGeneratorPlugin(const InstanceInfo& info)
