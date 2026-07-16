@@ -6,6 +6,13 @@
 using namespace iplug;
 using namespace igraphics;
 
+const int kNumParams = 1;
+
+enum EParams
+{
+  kParamPulses = 0
+};
+
 class MidiGenerator final : public Plugin
 {
 public:
@@ -13,6 +20,9 @@ public:
 
     // This replaces JUCE's prepareToPlay
     void OnReset() override;
+
+    // Triggered whenever a UI knob or host automation changes
+    void OnParamChange(int paramIdx) override;
 
     // This replaces JUCE's processBlock
     void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;

@@ -1,12 +1,16 @@
 #include "MidiGenerator.h"
 #include "IPlug_include_in_plug_src.h"
+#include "IControls.h"
 
 MidiGenerator::MidiGenerator(const InstanceInfo& info)
-: Plugin(info, MakeConfig(0, 0)) // 0 parameters, 0 presets for now
+: Plugin(info, MakeConfig(kNumParams, 0)) // 1 parameter, 0 presets for now
 {
+    // Define our "Pulses" parameter for the host and UI
+    GetParam(kParamPulses)->InitInt("Pulses", 5, 1, 16);
+
     // Initialize our track with defaults
     track.steps = 16;
-    track.pulses = 5;       
+    track.pulses = GetParam(kParamPulses)->Int();       
     track.rootNote = 60;    
     track.chordType = ChordType::Minor9th;
     track.voicing = VoicingStyle::Drop2;
@@ -14,6 +18,40 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     track.gate = 0.5f;      
     
     rebuildTrackPattern(track);
+
+#if IPLUG_EDITOR
+    mMakeGraphicsFunc = [&]() {
+        return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
+    };
+  
+    mLayoutFunc = [&](IGraphics* pGraphics) {
+        pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
+        pGraphics->AttachPanelBackground(COLOR_DARK_GRAY);
+        pGraphics->LoadFont("Roboto-Regular", ROBOTO_FN);
+        
+        const IRECT b = pGraphics->GetBounds();
+        
+        // Add a title
+        pGraphics->AttachControl(new ITextControl(b.GetMidVPadded(50).GetVShifted(-100), "Euclidean MIDI Generator", IText(24, COLOR_WHITE)));
+        
+        // Add a knob for Pulses!
+        pGraphics->AttachControl(new IVKnobControl(b.GetCentredInside(100), kParamPulses, "Pulses"));
+    };
+#endif
+}
+
+void MidiGenerator::OnParamChange(int paramIdx)
+{
+    switch (paramIdx)
+    {
+        case kParamPulses:
+            // When the knob turns, update our math engine
+            track.pulses = GetParam(kParamPulses)->Int();
+            rebuildTrackPattern(track);
+            break;
+        default:
+            break;
+    }
 }
 
 void MidiGenerator::OnReset()
