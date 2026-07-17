@@ -40,10 +40,10 @@
 					<key>sandboxSafe</key>
 					<true/>
 					<key>subtype</key>
-					<string>PmBl</string>
+					<string>dm39</string>
 					<key>tags</key>
 					<array>
-						<string>Synth</string>
+						<string>Effects</string>
 					</array>
 					<key>type</key>
 					<string>aumi</string>

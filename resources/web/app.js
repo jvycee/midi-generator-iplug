@@ -1,0 +1,761 @@
+// app.js — UI logic for MidiGenerator v2. Talks to the host exclusively
+// through the bridge functions defined in iplug.js (SPVFUI/BPCFUI/EPCFUI).
+//
+// Param order here MUST match EParams in MidiGenerator.h exactly -- indices
+// are positional, not name-based, on the C++ side.
+
+const PARAMS = [
+  /* 0  */ { name: 'kParamPulses',          type: 'int',     min: 1,  max: 32,  def: 5 },
+  /* 1  */ { name: 'kParamSequenceMode',    type: 'enum',    options: ['Euclidean', 'Density', 'Chaos'], def: 0 },
+  /* 2  */ { name: 'kParamSequenceAmount',  type: 'percent', def: 50 },
+  /* 3  */ { name: 'kParamProbability',     type: 'percent', def: 100 },
+  /* 4  */ { name: 'kParamSwing',           type: 'percent', def: 0 },
+  /* 5  */ { name: 'kParamClockAlign',      type: 'enum',    options: ['Hard', 'Soft'], def: 0 },
+  /* 6  */ { name: 'kParamClockSoftAmount', type: 'percent', def: 25 },
+  /* 7  */ { name: 'kParamKey',             type: 'enum',    options: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'], def: 0 },
+  /* 8  */ { name: 'kParamScaleMode',       type: 'enum',    options: ['Ionian','Dorian','Phrygian','Lydian','Mixolydian','Aeolian','Locrian'], def: 0 },
+  /* 9  */ { name: 'kParamChordType',       type: 'enum',    options: ['Single','Power','Octave','Major','Minor','Dim','Aug','Sus2','Sus4','Maj7','Min7','Dom7','Min9','Maj9','Dom9','Min11','Maj6','Min6','HalfDim7','Dim7'], def: 12 },
+  /* 10 */ { name: 'kParamChordVoices',     type: 'int',     min: 1, max: 6, def: 4 },
+  /* 11 */ { name: 'kParamHarmonyDrift',    type: 'percent', def: 20 },
+  /* 12 */ { name: 'kParamSteps',           type: 'int',     min: 1, max: 32, def: 16 },
+  /* 13 */ { name: 'kParamRotation',        type: 'int',     min: 0, max: 31, def: 0 },
+  /* 14 */ { name: 'kParamRootNote',        type: 'pitch',   min: 0, max: 128, def: 60 },
+  /* 15 */ { name: 'kParamVoicing',         type: 'enum',    options: ['Close','Drop2','Drop3','Spread','Wide'], def: 0 },
+  /* 16 */ { name: 'kParamNoteLength',      type: 'int',     min: 1, max: 256, def: 32 },
+  /* 17 */ { name: 'kParamGate',            type: 'percent', def: 85 },
+  /* 18 */ { name: 'kParamVelocity',        type: 'percent', def: 60 },
+  /* 19 */ { name: 'kParamMidiChannel',     type: 'int',     min: 1, max: 16, def: 1 },
+  /* 20 */ { name: 'kParamGlobalTranspose', type: 'int',     min: -24, max: 24, def: 0 },
+  /* 21 */ { name: 'kParamMod1Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 1 },
+  /* 22 */ { name: 'kParamMod1CC',          type: 'int',     min: 0, max: 127, def: 1 },
+  /* 23 */ { name: 'kParamMod2Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 5 },
+  /* 24 */ { name: 'kParamMod2CC',          type: 'int',     min: 0, max: 127, def: 74 },
+  /* 25 */ { name: 'kParamExportBars',      type: 'int',     min: 1, max: 16, def: 4 },
+  /* 26 */ { name: 'kParamMonoMode',        type: 'bool',    def: 0 },
+  /* 27 */ { name: 'kParamMaxVoices',       type: 'int',     min: 1, max: 16, def: 8 },
+  /* 28 */ { name: 'kParamMod3Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 0 },
+  /* 29 */ { name: 'kParamMod3CC',          type: 'int',     min: 0, max: 127, def: 11 },
+  /* 30 */ { name: 'kParamMod4Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 0 },
+  /* 31 */ { name: 'kParamMod4CC',          type: 'int',     min: 0, max: 127, def: 7 },
+  /* 32 */ { name: 'kParamMod5Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 0 },
+  /* 33 */ { name: 'kParamMod5CC',          type: 'int',     min: 0, max: 127, def: 10 },
+  /* 34 */ { name: 'kParamMod6Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 0 },
+  /* 35 */ { name: 'kParamMod6CC',          type: 'int',     min: 0, max: 127, def: 71 },
+  /* 36 */ { name: 'kParamMod7Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 0 },
+  /* 37 */ { name: 'kParamMod7CC',          type: 'int',     min: 0, max: 127, def: 91 },
+  /* 38 */ { name: 'kParamMod8Source',      type: 'enum',    options: ['Off','Velocity','Gate','Probability','Dens/Chaos','Drift','Random'], def: 0 },
+  /* 39 */ { name: 'kParamMod8CC',          type: 'int',     min: 0, max: 127, def: 93 },
+  /* 40 */ { name: 'kParamSendClock',       type: 'bool',    def: 0 },
+  /* 41 */ { name: 'kParamUIViewMode',      type: 'bool',    def: 0 }, // 0 = Full, 1 = Compact -- hidden/meta, UI layout state only
+];
+
+const NAME_TO_IDX = {};
+PARAMS.forEach((p, i) => { NAME_TO_IDX[p.name] = i; });
+
+// Current REAL (non-normalized) value per param, indexed positionally.
+const state = PARAMS.map(p => p.def);
+
+function paramIdx(name) { return NAME_TO_IDX[name]; }
+
+function realToNorm(p, real) {
+  switch (p.type) {
+    case 'percent': return clamp01(real / 100);
+    case 'bool': return real ? 1 : 0;
+    case 'enum': return clamp01(real / (p.options.length - 1));
+    default: return clamp01((real - p.min) / (p.max - p.min));
+  }
+}
+
+function normToReal(p, norm) {
+  norm = clamp01(norm);
+  switch (p.type) {
+    case 'percent': return Math.round(norm * 100);
+    case 'bool': return norm >= 0.5 ? 1 : 0;
+    case 'enum': return Math.round(norm * (p.options.length - 1));
+    default: return Math.round(p.min + norm * (p.max - p.min));
+  }
+}
+
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+function formatValue(p, real) {
+  switch (p.type) {
+    case 'percent': return real + '%';
+    case 'bool': return real ? 'On' : 'Off';
+    case 'enum': return p.options[real];
+    case 'pitch': return midiNoteName(real);
+    default: return String(real);
+  }
+}
+
+function midiNoteName(n) {
+  const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const octave = Math.floor(n / 12) - 1;
+  return names[((n % 12) + 12) % 12] + octave;
+}
+
+// ---- Setting a param value (always the single source of truth) ----
+
+function setParam(idx, real, { fromHost = false, sendToHost = true } = {}) {
+  const p = PARAMS[idx];
+  real = Math.max(p.min ?? 0, Math.min(p.max ?? (p.type === 'enum' ? p.options.length - 1 : (p.type === 'percent' ? 100 : 1)), real));
+  state[idx] = real;
+
+  if (sendToHost && !fromHost && window.IPLUG_HAS_HOST) {
+    SPVFUI(idx, realToNorm(p, real));
+  }
+
+  refreshControlsFor(idx);
+  onParamStateChanged(idx);
+}
+
+// A single control gesture (drag/click) should be wrapped in Begin/End so
+// the host knows automation is happening, matching the three-step protocol
+// the webview-ui skill documents.
+function gestureBegin(idx) { if (window.IPLUG_HAS_HOST) BPCFUI(idx); }
+function gestureEnd(idx) { if (window.IPLUG_HAS_HOST) EPCFUI(idx); }
+
+// ==========================================================================
+// Generic control widgets -- bound declaratively via data-param attributes
+// ==========================================================================
+
+function initKnobs(root) {
+  root.querySelectorAll('.knob[data-param]').forEach(el => {
+    const idx = paramIdx(el.dataset.param);
+    if (idx === undefined) return;
+    wrapKnobWithLabel(el, idx);
+    bindKnobDrag(el, idx);
+  });
+}
+
+function wrapKnobWithLabel(knobEl, idx) {
+  if (knobEl.dataset.wrapped || 'noLabel' in knobEl.dataset) return;
+  knobEl.dataset.wrapped = '1';
+  const label = knobEl.dataset.label || PARAMS[idx].name;
+  const cell = document.createElement('div');
+  cell.className = 'knob-cell';
+  knobEl.parentNode.insertBefore(cell, knobEl);
+  cell.appendChild(knobEl);
+  const labelP = document.createElement('p');
+  labelP.className = 'knob-cell-label';
+  labelP.textContent = label;
+  const valueP = document.createElement('p');
+  valueP.className = 'knob-cell-value mono';
+  valueP.dataset.knobValueFor = idx;
+  cell.appendChild(labelP);
+  cell.appendChild(valueP);
+}
+
+function bindKnobDrag(el, idx, onLiveChange, defaultNorm) {
+  let dragging = false, startY = 0, startNorm = 0;
+  const DRAG_RANGE = 150;
+
+  const onMove = e => {
+    if (!dragging) return;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    // Shift = fine-tune: same physical drag distance covers a much smaller
+    // value range, useful for dialing in sensitive meta-controls like
+    // Chaos/Density. No effect on touch (TouchEvent has no shiftKey).
+    const range = e.shiftKey ? DRAG_RANGE * 5 : DRAG_RANGE;
+    const delta = (startY - clientY) / range;
+    const norm = clamp01(startNorm + delta);
+    if (onLiveChange) {
+      onLiveChange(norm);
+    } else {
+      setParam(idx, normToReal(PARAMS[idx], norm));
+    }
+  };
+
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('touchend', onUp);
+    window.removeEventListener('blur', onUp);
+    gestureEnd(idx);
+  };
+
+  const currentNorm = () => {
+    if (onLiveChange && idx === -1) {
+      return (parseFloat(el.style.getPropertyValue('--pct')) || 0) / 100;
+    }
+    return realToNorm(PARAMS[idx] || { type: 'percent' }, state[idx]);
+  };
+
+  const onDown = e => {
+    dragging = true;
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startNorm = currentNorm();
+    gestureBegin(idx);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('blur', onUp);
+    if (e.cancelable) e.preventDefault();
+  };
+
+  const onDblClick = () => {
+    gestureBegin(idx);
+    if (onLiveChange) {
+      if (defaultNorm !== undefined) onLiveChange(defaultNorm);
+    } else {
+      setParam(idx, PARAMS[idx].def);
+    }
+    gestureEnd(idx);
+  };
+
+  // Wheel-to-adjust, gated behind Option/Alt: the Full view's card stack
+  // scrolls vertically on its own, so an unmodified wheel/trackpad swipe
+  // over a knob has to keep scrolling the page, not silently eat the
+  // gesture and nudge a param instead.
+  const onWheel = e => {
+    if (!e.altKey) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 0.05 : 0.01;
+    const dir = e.deltaY < 0 ? 1 : -1;
+    const newNorm = clamp01(currentNorm() + dir * step);
+    gestureBegin(idx);
+    if (onLiveChange) onLiveChange(newNorm);
+    else setParam(idx, normToReal(PARAMS[idx], newNorm));
+    gestureEnd(idx);
+  };
+
+  el.addEventListener('mousedown', onDown);
+  el.addEventListener('touchstart', onDown, { passive: false });
+  el.addEventListener('dblclick', onDblClick);
+  el.addEventListener('wheel', onWheel, { passive: false });
+  bindKeyboard(el, idx, onLiveChange);
+}
+
+function initSliders(root) {
+  root.querySelectorAll('.slider[data-param]').forEach(el => {
+    const idx = paramIdx(el.dataset.param);
+    if (idx === undefined) return;
+    bindHorizontalSlider(el, idx);
+  });
+}
+
+function bindHorizontalSlider(el, idx, isVertical = false) {
+  function normFromEvent(e) {
+    const rect = el.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    if (isVertical) {
+      return clamp01(1 - (clientY - rect.top) / rect.height);
+    }
+    return clamp01((clientX - rect.left) / rect.width);
+  }
+  let dragging = false;
+
+  const onMove = e => {
+    if (!dragging) return;
+    setParam(idx, normToReal(PARAMS[idx], normFromEvent(e)));
+  };
+
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('touchend', onUp);
+    window.removeEventListener('blur', onUp);
+    gestureEnd(idx);
+  };
+
+  const onDown = e => {
+    dragging = true;
+    gestureBegin(idx);
+    setParam(idx, normToReal(PARAMS[idx], normFromEvent(e)));
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('blur', onUp);
+    if (e.cancelable) e.preventDefault();
+  };
+
+  const onDblClick = () => {
+    gestureBegin(idx);
+    setParam(idx, PARAMS[idx].def);
+    gestureEnd(idx);
+  };
+
+  // See bindKnobDrag's onWheel for why this requires Alt/Option.
+  const onWheel = e => {
+    if (!e.altKey) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 0.05 : 0.01;
+    const dir = e.deltaY < 0 ? 1 : -1;
+    const newNorm = clamp01(realToNorm(PARAMS[idx], state[idx]) + dir * step);
+    gestureBegin(idx);
+    setParam(idx, normToReal(PARAMS[idx], newNorm));
+    gestureEnd(idx);
+  };
+
+  el.addEventListener('mousedown', onDown);
+  el.addEventListener('touchstart', onDown, { passive: false });
+  el.addEventListener('dblclick', onDblClick);
+  el.addEventListener('wheel', onWheel, { passive: false });
+  bindKeyboard(el, idx);
+}
+
+function bindKeyboard(el, idx, onLiveChange) {
+  el.tabIndex = 0;
+  el.addEventListener('keydown', e => {
+    const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    let norm;
+    if (onLiveChange && idx === -1) {
+      norm = (parseFloat(el.style.getPropertyValue('--pct')) || 0) / 100;
+    } else {
+      norm = realToNorm(PARAMS[idx] || { type: 'percent' }, state[idx]);
+    }
+    const step = e.shiftKey ? 0.05 : 0.01;
+    const dir = (e.key === 'ArrowUp' || e.key === 'ArrowRight') ? 1 : -1;
+    const newNorm = clamp01(norm + dir * step);
+    gestureBegin(idx);
+    if (onLiveChange) onLiveChange(newNorm);
+    else setParam(idx, normToReal(PARAMS[idx], newNorm));
+    gestureEnd(idx);
+  });
+}
+
+function initSwitches(root) {
+  root.querySelectorAll('.switch[data-param]').forEach(el => {
+    const idx = paramIdx(el.dataset.param);
+    if (idx === undefined) return;
+    el.tabIndex = 0;
+    el.addEventListener('click', () => {
+      gestureBegin(idx);
+      setParam(idx, state[idx] ? 0 : 1);
+      gestureEnd(idx);
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        el.click();
+      }
+    });
+  });
+}
+
+function initDropdowns(root) {
+  root.querySelectorAll('select.dropdown[data-param]').forEach(el => {
+    const idx = paramIdx(el.dataset.param);
+    if (idx === undefined) return;
+    const p = PARAMS[idx];
+
+    el.innerHTML = '';
+    if (p.type === 'enum') {
+      p.options.forEach((opt, i) => {
+        const o = document.createElement('option');
+        o.value = i;
+        o.textContent = opt;
+        el.appendChild(o);
+      });
+    } else if (p.type === 'pitch') {
+      for (let n = p.min; n <= p.max; n++) {
+        const o = document.createElement('option');
+        o.value = n;
+        o.textContent = midiNoteName(n);
+        el.appendChild(o);
+      }
+    }
+
+    el.addEventListener('change', () => {
+      gestureBegin(idx);
+      setParam(idx, parseInt(el.value, 10));
+      gestureEnd(idx);
+    });
+  });
+}
+
+function initCCFields(root) {
+  root.querySelectorAll('input.cc-field[data-param]').forEach(el => {
+    const idx = paramIdx(el.dataset.param);
+    if (idx === undefined) return;
+    el.addEventListener('change', () => {
+      let v = parseInt(el.value, 10);
+      if (isNaN(v)) v = PARAMS[idx].def;
+      gestureBegin(idx);
+      setParam(idx, v);
+      gestureEnd(idx);
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') el.blur();
+    });
+  });
+}
+
+function initPillSelectors(root) {
+  root.querySelectorAll('.pill-selector[data-param]').forEach(el => {
+    const idx = paramIdx(el.dataset.param);
+    if (idx === undefined) return;
+    const options = el.dataset.options.split(',');
+    el.tabIndex = 0;
+    el.innerHTML = '';
+    options.forEach((label, i) => {
+      const pill = document.createElement('div');
+      pill.className = 'pill-option';
+      pill.textContent = label;
+      pill.addEventListener('click', () => {
+        gestureBegin(idx);
+        setParam(idx, i);
+        gestureEnd(idx);
+      });
+      el.appendChild(pill);
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const next = (state[idx] + dir + options.length) % options.length;
+        gestureBegin(idx);
+        setParam(idx, next);
+        gestureEnd(idx);
+      }
+    });
+  });
+}
+
+// ---- Push current state into every bound control (used on load + after any param change) ----
+
+function refreshControlsFor(idx) {
+  const p = PARAMS[idx];
+  const real = state[idx];
+  const norm = realToNorm(p, real);
+  const pct = Math.round(norm * 100);
+
+  document.querySelectorAll(`[data-param="${p.name}"]`).forEach(el => {
+    if (el.classList.contains('knob') || el.classList.contains('slider')) {
+      el.style.setProperty('--pct', pct);
+      if (el.classList.contains('knob')) updateKnobIndicator(el, pct);
+    } else if (el.classList.contains('switch')) {
+      el.classList.toggle('on', real >= 1);
+      const onLabel = el.dataset.onLabel, offLabel = el.dataset.offLabel;
+    } else if (el.tagName === 'SELECT') {
+      el.value = real;
+    } else if (el.classList.contains('cc-field')) {
+      el.value = real;
+    } else if (el.classList.contains('pill-selector')) {
+      Array.from(el.children).forEach((pill, i) => pill.classList.toggle('active', i === real));
+    }
+  });
+
+  document.querySelectorAll(`[data-knob-value-for="${idx}"]`).forEach(elm => {
+    elm.textContent = formatValue(p, real);
+  });
+  document.querySelectorAll(`[data-readout="${p.name}"]`).forEach(elm => {
+    elm.textContent = formatValue(p, real);
+  });
+}
+
+function refreshAllControls() {
+  PARAMS.forEach((_, idx) => refreshControlsFor(idx));
+}
+
+// ==========================================================================
+// Reactions to param changes (visualizer, soft-amount visibility, footer, ...)
+// ==========================================================================
+
+function onParamStateChanged(idx) {
+  const name = PARAMS[idx].name;
+
+  if (['kParamSteps', 'kParamPulses', 'kParamRotation', 'kParamSequenceMode'].includes(name)) {
+    // Sync Density slider in Compact View
+    const steps = state[paramIdx('kParamSteps')] || 1;
+    const pulses = state[paramIdx('kParamPulses')] || 0;
+    const density = Math.round((pulses / steps) * 100);
+    const dEl = document.getElementById('compact-density-slider');
+    const dVal = document.getElementById('compact-density-value');
+    if (dEl) dEl.style.setProperty('--pct', density);
+    if (dVal) dVal.textContent = density + '%';
+  }
+  if (name === 'kParamClockAlign') {
+    document.getElementById('soft-amount-row').hidden = state[paramIdx('kParamClockAlign')] === 0;
+  }
+  if (['kParamKey', 'kParamScaleMode', 'kParamChordType', 'kParamChordVoices', 'kParamMonoMode'].includes(name)) {
+    updateSummaryReadouts();
+  }
+  if (name === 'kParamExportBars') {
+    document.getElementById('bars-readout').textContent = state[paramIdx('kParamExportBars')] + ' BARS';
+  }
+  if (name === 'kParamMidiChannel') {
+    document.getElementById('compact-midi-badge').textContent = 'CH ' + state[paramIdx('kParamMidiChannel')];
+  }
+  if (name === 'kParamUIViewMode') {
+    showView(state[idx] ? 'compact' : 'full');
+  }
+}
+
+function updateSummaryReadouts() {
+  const keyNames = PARAMS[paramIdx('kParamKey')].options;
+  const scaleNames = PARAMS[paramIdx('kParamScaleMode')].options;
+  const key = keyNames[state[paramIdx('kParamKey')]];
+  const scale = scaleNames[state[paramIdx('kParamScaleMode')]];
+  const mono = state[paramIdx('kParamMonoMode')];
+  const voices = state[paramIdx('kParamChordVoices')];
+  const texture = mono ? 'Mono' : (voices <= 1 ? 'Single' : voices === 2 ? 'Dyad' : voices === 3 ? 'Triad' : 'Chord');
+  const text = `${key} ${scale} · ${texture}`;
+  const el1 = document.getElementById('footer-summary');
+  const el2 = document.getElementById('compact-summary');
+  if (el1) el1.textContent = text;
+  if (el2) el2.textContent = text;
+}
+
+// ==========================================================================
+// Tempo-relative motion. Full's breathing loop is 8 "half-tempo beats" and
+// Compact's is 12 -- i.e. the whole UI breathes at half the host's BPM, not
+// literally on the beat. Defaults to 120bpm (matching Figma's original
+// 8s/12s exactly) until real host tempo is wired up in the C++ bridge; call
+// this again with the live tempo once that lands.
+// ==========================================================================
+
+let masterBpm = 120;
+let fullCycleSeconds = 8;     // kept in sync with the --full-cycle CSS var
+let compactCycleSeconds = 12; // kept in sync with the --compact-cycle CSS var
+
+function updateMasterTempo(bpm) {
+  masterBpm = Math.max(20, bpm || 120);
+  const halfBpm = masterBpm / 2;
+  const secondsPerHalfBeat = 60 / halfBpm;
+  fullCycleSeconds = secondsPerHalfBeat * 8;
+  compactCycleSeconds = secondsPerHalfBeat * 12;
+  document.documentElement.style.setProperty('--full-cycle', fullCycleSeconds.toFixed(3) + 's');
+  document.documentElement.style.setProperty('--compact-cycle', compactCycleSeconds.toFixed(3) + 's');
+}
+
+// ==========================================================================
+// Compact-mode meta-controls (Chaos knob + Density slider) -- same mapping
+// as the native IGraphics build: Chaos jointly randomizes Rotation +
+// Probability, Density sets Pulses as a pulses:steps ratio.
+// ==========================================================================
+
+// Positions the pointer dot around any hero knob (Compact's Chaos, Full's
+// Drift -- both share the same .knob-canvas markup now) to track its live
+// value. Matches conic-gradient()'s own convention (0% at 12 o'clock,
+// sweeping clockwise), so the dot always sits exactly at the end of the
+// colored arc. Looked up via closest('.knob-canvas') rather than a fixed
+// ID, so it works for any knob wrapped in that markup, not just Chaos.
+function updateKnobIndicator(knobEl, pct) {
+  const canvas = knobEl.closest('.knob-canvas');
+  if (!canvas) return;
+  const dot = canvas.querySelector('.indicator-dot');
+  if (!dot) return;
+  const angle = (pct / 100) * 2 * Math.PI - Math.PI / 2;
+  const radius = 50; // knob-xl is 100px across, canvas is 140px
+  const cx = 70, cy = 70;
+  dot.style.left = (cx + radius * Math.cos(angle)) + 'px';
+  dot.style.top = (cy + radius * Math.sin(angle)) + 'px';
+}
+
+function initCompactControls() {
+  const chaosKnob = document.getElementById('compact-chaos-knob');
+  const densitySlider = document.getElementById('compact-density-slider');
+
+  let chaosNorm = 0.2;
+  bindKnobDrag(chaosKnob, -1, norm => {
+    chaosNorm = norm;
+    chaosKnob.style.setProperty('--pct', Math.round(norm * 100));
+    updateKnobIndicator(chaosKnob, norm * 100);
+    document.getElementById('compact-chaos-value').textContent = Math.round(norm * 100) + '%';
+
+    const stepsIdx = paramIdx('kParamSteps');
+    const maxSteps = Math.max(1, state[stepsIdx]);
+    const spread = Math.round(norm * (maxSteps - 1));
+    const rotation = spread > 0 ? Math.round((Math.random() * (2 * spread + 1)) - spread) : 0;
+    const rotIdx = paramIdx('kParamRotation');
+    setParam(rotIdx, ((rotation % maxSteps) + maxSteps) % maxSteps);
+
+    const probIdx = paramIdx('kParamProbability');
+    setParam(probIdx, Math.round(100 * (1 - norm * 0.7)));
+  }, 0.2);
+
+  let densityNorm = 0.31;
+  bindKnobDrag(densitySlider, -1, norm => {
+    densityNorm = norm;
+    densitySlider.style.setProperty('--pct', Math.round(norm * 100));
+    document.getElementById('compact-density-value').textContent = Math.round(norm * 100) + '%';
+
+    const stepsIdx = paramIdx('kParamSteps');
+    const maxSteps = Math.max(1, state[stepsIdx]);
+    const pulses = Math.max(1, Math.min(maxSteps, Math.round(norm * maxSteps)));
+    setParam(paramIdx('kParamPulses'), pulses);
+  }, 0.31);
+
+  chaosKnob.style.setProperty('--pct', 20);
+  updateKnobIndicator(chaosKnob, 20);
+  densitySlider.style.setProperty('--pct', 31);
+}
+
+// ==========================================================================
+// View switching
+// ==========================================================================
+
+function showView(name) {
+  // Set display directly rather than the `hidden` attribute -- the ID-scoped
+  // `display: flex` rules in style.css outrank the UA [hidden] stylesheet
+  // rule in specificity, so `.hidden = true` alone silently does nothing.
+  const full = document.getElementById('view-full');
+  const compact = document.getElementById('view-compact');
+  full.style.display = name === 'full' ? 'flex' : 'none';
+  compact.style.display = name === 'compact' ? 'flex' : 'none';
+}
+
+// ==========================================================================
+// Drag-to-DAW export. Real file drag needs InitiateExternalFileDragDrop()
+// on the C++ side (native-only API, not exposed to WebView) -- wiring that
+// up is tracked separately. For now this sends a request to the host and
+// gives click feedback in preview mode.
+// ==========================================================================
+
+const exportBtns = ['drag-export-btn-full', 'drag-export-btn-compact'].map(id => document.getElementById(id));
+let exportFeedbackTimer = null;
+
+function setExportButtonState(state) {
+  exportBtns.forEach(btn => {
+    if (!btn) return;
+    btn.classList.remove('export-ready', 'export-failed');
+    if (state === 'ready') btn.classList.add('export-ready');
+    else if (state === 'failed') btn.classList.add('export-failed');
+  });
+}
+
+function requestExport() {
+  SAMFUI(100 /* msgTag: export request, arbitrary constant agreed with C++ */);
+  if (!window.IPLUG_HAS_HOST) {
+    console.log('[preview] Drag-export clicked -- wire to InitiateExternalFileDragDrop on the C++ side.');
+  }
+}
+
+// Called from OnMessage() below once the C++ side confirms the render
+// actually finished (SendArbitraryMsgFromDelegate(101/102), MidiGenerator.cpp
+// OnMessage) -- the click alone doesn't mean the file exists yet.
+function onExportResult(success) {
+  clearTimeout(exportFeedbackTimer);
+  setExportButtonState(success ? 'ready' : 'failed');
+  exportFeedbackTimer = setTimeout(() => setExportButtonState(null), 1600);
+}
+
+// ==========================================================================
+// Boot
+// ==========================================================================
+
+// Small random phase offset per element so reloading the plugin, or having
+// multiple instances open, doesn't look like every ring/glow is breathing in
+// perfect unison -- purely cosmetic, doesn't touch any bound param.
+function randomizeAmbientPhase() {
+  const selectors = [
+    '.ambient-ring-outer', '.ambient-ring-mid', '.ambient-ring-inner', '.knob-canvas .knob-xl',
+  ];
+  document.querySelectorAll(selectors.join(',')).forEach(el => {
+    const existing = getComputedStyle(el).animationName;
+    if (existing === 'none') return;
+    el.style.animationDelay = (-Math.random() * 3).toFixed(2) + 's';
+  });
+}
+
+// Slow, randomly-applied glow on a trio of rings: every 6-12s, reshuffle
+// which of the 3 glow, weighted toward exactly one, occasionally none, and
+// -- per spec -- never all three at once (cap of 2). The actual fade
+// in/out is handled by the CSS `transition` on .ambient-ring-*; this just
+// toggles the .ring-glow class on a slow, irregular schedule. Every
+// .knob-canvas's ring trio runs its own independent timer.
+function setupRingGlow(elements, minMs, maxMs) {
+  const rings = elements.filter(Boolean);
+  if (rings.length === 0) return;
+
+  function reshuffle() {
+    const roll = Math.random();
+    const count = roll < 0.15 ? 0 : (roll < 0.7 ? 1 : Math.min(2, rings.length));
+    const shuffled = [...rings].sort(() => Math.random() - 0.5);
+    const glowing = new Set(shuffled.slice(0, count));
+    rings.forEach(el => el.classList.toggle('ring-glow', glowing.has(el)));
+    setTimeout(reshuffle, minMs + Math.random() * (maxMs - minMs));
+  }
+  reshuffle();
+}
+
+function boot() {
+  updateMasterTempo(120); // default until real host tempo is wired up
+  initKnobs(document);
+  initSliders(document);
+  initSwitches(document);
+  initDropdowns(document);
+  initCCFields(document);
+  initPillSelectors(document);
+  initCompactControls();
+
+  // Routed through kParamUIViewMode (not a direct showView() call) so the
+  // choice rides the host's normal param state save/recall and survives the
+  // plugin window being closed and reopened -- onParamStateChanged below
+  // does the actual showView() once the param is set.
+  const viewModeIdx = paramIdx('kParamUIViewMode');
+  document.getElementById('btn-goto-compact').addEventListener('click', () => setParam(viewModeIdx, 1));
+  document.getElementById('btn-goto-full').addEventListener('click', () => setParam(viewModeIdx, 0));
+  document.getElementById('drag-export-btn-full').addEventListener('click', requestExport);
+  document.getElementById('drag-export-btn-compact').addEventListener('click', requestExport);
+
+  document.getElementById('bars-dec').addEventListener('click', () => {
+    const idx = paramIdx('kParamExportBars');
+    gestureBegin(idx); setParam(idx, state[idx] - 1); gestureEnd(idx);
+  });
+  document.getElementById('bars-inc').addEventListener('click', () => {
+    const idx = paramIdx('kParamExportBars');
+    gestureBegin(idx); setParam(idx, state[idx] + 1); gestureEnd(idx);
+  });
+
+  refreshAllControls();
+  updateSummaryReadouts();
+  document.getElementById('bars-readout').textContent = state[paramIdx('kParamExportBars')] + ' BARS';
+  document.getElementById('compact-midi-badge').textContent = 'CH ' + state[paramIdx('kParamMidiChannel')];
+
+  randomizeAmbientPhase();
+
+  // Every .knob-canvas (Full's Drift knob, Compact's Chaos knob) gets its
+  // own independent glow scheduler over its own ring trio.
+  document.querySelectorAll('.knob-canvas').forEach(canvas => {
+    setupRingGlow([
+      canvas.querySelector('.ambient-ring-outer'),
+      canvas.querySelector('.ambient-ring-mid'),
+      canvas.querySelector('.ambient-ring-inner'),
+    ], 6000, 12000);
+  });
+
+  showView('full');
+}
+
+// ---- Delegate callbacks required by iplug.js ----
+
+function OnParamChange(paramIdx_, normValue) {
+  const p = PARAMS[paramIdx_];
+  if (!p) return;
+  setParam(paramIdx_, normToReal(p, normValue), { fromHost: true, sendToHost: false });
+}
+
+function OnControlChange(ctrlTag, value) {}
+function OnControlMessage(ctrlTag, msgTag, msg) {}
+function OnMidiMsg(statusByte, d1, d2) {}
+
+function OnMessage(msgTag, dataSize, data) {
+  // Real host sends full param metadata here on load (msgTag == -1). Our
+  // local PARAMS registry above already mirrors the C++ EParams exactly, so
+  // this is currently just a hook for later cross-checking / dynamic sync.
+  if (msgTag === -1 && dataSize > 0) {
+    try {
+      const json = JSON.parse(window.atob(data));
+      console.log('[app.js] Host param metadata received:', json);
+    } catch (e) { /* ignore */ }
+  } else if (msgTag === 101) {
+    onExportResult(true);
+  } else if (msgTag === 102) {
+    onExportResult(false);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', boot);

@@ -14,16 +14,27 @@ BINARY_NAME = MidiGenerator
 
 // ------------------------------
 // HEADER AND LIBRARY SEARCH PATHS
-EXTRA_INC_PATHS = $(IGRAPHICS_INC_PATHS)
+// NOTE: the IGraphics library's own .cpp/.mm files are still listed in this
+// project's Sources build phases (a true WebView-only project would remove
+// them, but that's a much bigger, riskier pbxproj edit) -- they still need
+// IGRAPHICS_INC_PATHS/LIB_PATHS to find their own third-party deps (STB,
+// NanoSVG, NanoVG), even though MidiGenerator itself no longer uses
+// IGraphics for its own UI (that's what NO_IGRAPHICS below controls).
+// IPlug/Extras/WebView is ALSO needed explicitly: IPlugDelegate_select.h
+// does `#include "IPlugWebViewEditorDelegate.h"` with a bare filename, and
+// that header lives one level below where EXTRAS_INC_PATHS (in
+// common-mac.xcconfig) already looks -- it only covers Extras/Synth,
+// Extras/OSC, Extras/HIIR, not Extras/WebView.
+EXTRA_INC_PATHS = $(IGRAPHICS_INC_PATHS) $(IPLUG2_ROOT)/IPlug/Extras/WebView
 EXTRA_LIB_PATHS = $(IGRAPHICS_LIB_PATHS)
-EXTRA_LNK_FLAGS = -framework Metal -framework MetalKit -framework OpenGL -framework Accelerate //$(IGRAPHICS_LNK_FLAGS)
+EXTRA_LNK_FLAGS = -framework Metal -framework MetalKit -framework OpenGL -framework Accelerate -framework WebKit
 
 // EXTRA_APP_DEFS =
 // EXTRA_PLUGIN_DEFS =
 
 //------------------------------
 // PREPROCESSOR MACROS
-EXTRA_ALL_DEFS = OBJC_PREFIX=vMidiGenerator SWELL_APP_PREFIX=Swell_vMidiGenerator IGRAPHICS_NANOVG IGRAPHICS_METAL
+EXTRA_ALL_DEFS = OBJC_PREFIX=vMidiGenerator SWELL_APP_PREFIX=Swell_vMidiGenerator IGRAPHICS_NANOVG IGRAPHICS_METAL WEBVIEW_EDITOR_DELEGATE NO_IGRAPHICS IDLE_TIMER_RATE=50
 //EXTRA_DEBUG_DEFS =
 //EXTRA_RELEASE_DEFS =
 //EXTRA_TRACER_DEFS =

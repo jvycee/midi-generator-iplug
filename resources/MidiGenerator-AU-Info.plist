@@ -16,7 +16,7 @@
 			<key>sandboxSafe</key>
 			<true/>
 			<key>subtype</key>
-			<string>PmBl</string>
+			<string>dm39</string>
 			<key>type</key>
 			<string>aumi</string>
 			<key>version</key>
@@ -42,13 +42,13 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleSignature</key>
-	<string>PmBl</string>
+	<string>dm39</string>
 	<key>CFBundleVersion</key>
 	<string>1.0.0</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
-	<string>10.13.0</string>
+	<string>12.0.0</string>
 	<key>NSPrincipalClass</key>
 	<string>MidiGenerator_View</string>
 </dict>

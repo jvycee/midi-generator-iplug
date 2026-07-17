@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleSignature</key>
-	<string>PmBl</string>
+	<string>dm39</string>
 	<key>CFBundleVersion</key>
 	<string>1.0.0</string>
 	<key>CSResourcesFileMapped</key>
@@ -29,7 +29,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>10.13.0</string>
+	<string>12.0.0</string>
 	<key>NSMainNibFile</key>
 	<string>MidiGenerator-macOS-MainMenu</string>
 	<key>NSPrincipalClass</key>

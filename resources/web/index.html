@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MidiGenerator v2</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============================================================
+       FULL VIEW ("Drift Console") — default
+       ============================================================ -->
+  <div id="view-full" class="view">
+
+    <div class="header-row">
+      <div class="brand-group">
+        <div class="pulse-indicator"></div>
+        <div class="text-group">
+          <p class="brand-title">MidiGenerator <span>v2</span></p>
+          <p class="brand-subtitle">Ambient Generative System</p>
+        </div>
+      </div>
+      <button class="mode-link" id="btn-goto-compact">Compact &#9656;</button>
+    </div>
+
+    <div class="card hero-card">
+      <div class="knob-canvas">
+        <div class="ambient-ring-outer"></div>
+        <div class="ambient-ring-mid"></div>
+        <div class="ambient-ring-inner"></div>
+        <div class="knob knob-xl" data-param="kParamHarmonyDrift" data-no-label></div>
+        <div class="indicator-dot"></div>
+      </div>
+      <div class="drift-labels">
+        <p class="drift-label-title">Drift Amount</p>
+        <p class="drift-label-value mono" data-readout="kParamHarmonyDrift">20%</p>
+      </div>
+    </div>
+
+    <div class="card rhythm-card">
+      <div class="card-title-row">
+        <span class="card-icon">&#9202;</span>
+        <p class="card-title accent-coral">Rhythm Generator</p>
+      </div>
+
+      <div class="knob-grid">
+        <div class="knob knob-sm" data-param="kParamSteps" data-label="Steps"></div>
+        <div class="knob knob-sm" data-param="kParamPulses" data-label="Pulses"></div>
+        <div class="knob knob-sm" data-param="kParamRotation" data-label="Rotation"></div>
+        <div class="knob knob-sm" data-param="kParamSequenceAmount" data-label="Dens/Chaos" data-unit="%"></div>
+        <div class="knob knob-sm" data-param="kParamProbability" data-label="Probability" data-unit="%"></div>
+        <div class="knob knob-sm" data-param="kParamSwing" data-label="Swing" data-unit="%"></div>
+      </div>
+
+      <div class="pill-selector" data-param="kParamSequenceMode" data-options="Euclidean,Density,Chaos"></div>
+
+      <div class="toggle-row">
+        <p class="toggle-label">Internal Clock Align</p>
+        <div class="switch" data-param="kParamClockAlign" data-on-label="Soft" data-off-label="Hard"></div>
+      </div>
+
+      <div class="sub-slider-row" id="soft-amount-row">
+        <div class="slider-container">
+          <div class="slider-header">
+            <p class="slider-label">Soft Amount</p>
+            <p class="slider-value mono" data-readout="kParamClockSoftAmount">25%</p>
+          </div>
+          <div class="slider" data-param="kParamClockSoftAmount"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card harmony-card">
+      <div class="card-title-row">
+        <span class="card-icon">&#9834;</span>
+        <p class="card-title accent-sage">Harmony &amp; Voicing</p>
+      </div>
+
+      <div class="dropdown-row">
+        <div class="dropdown-field-wrap" style="width:70px">
+          <p class="field-label">Key</p>
+          <select class="dropdown" data-param="kParamKey"></select>
+        </div>
+        <div class="dropdown-field-wrap" style="flex:1">
+          <p class="field-label">Scale</p>
+          <select class="dropdown" data-param="kParamScaleMode"></select>
+        </div>
+        <div class="dropdown-field-wrap" style="width:64px">
+          <p class="field-label">Root</p>
+          <select class="dropdown" data-param="kParamRootNote"></select>
+        </div>
+      </div>
+
+      <div class="knob-grid knob-grid-3">
+        <div class="knob knob-sm" data-param="kParamChordType" data-label="Chord Type"></div>
+        <div class="knob knob-sm" data-param="kParamVoicing" data-label="Voicing"></div>
+        <div class="knob knob-sm" data-param="kParamChordVoices" data-label="Voices"></div>
+      </div>
+
+      <div class="sliders-group">
+        <div class="slider-container">
+          <div class="slider-header">
+            <p class="slider-label">Note Length</p>
+            <p class="slider-value mono" data-readout="kParamNoteLength">32</p>
+          </div>
+          <div class="slider" data-param="kParamNoteLength"></div>
+        </div>
+        <div class="slider-container">
+          <div class="slider-header">
+            <p class="slider-label">Gate Time</p>
+            <p class="slider-value mono" data-readout="kParamGate">85%</p>
+          </div>
+          <div class="slider" data-param="kParamGate"></div>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <p class="toggle-label">Monophonic Output</p>
+        <div class="switch" data-param="kParamMonoMode" data-on-label="On" data-off-label="Off"></div>
+      </div>
+    </div>
+
+    <div class="card perf-card">
+      <div class="card-title-row">
+        <span class="card-icon">&#8942;&#8942;</span>
+        <p class="card-title accent-lavender">Modulation &amp; Utility</p>
+      </div>
+
+      <div class="knob-grid knob-grid-4">
+        <div class="knob knob-sm" data-param="kParamVelocity" data-label="Velocity"></div>
+        <div class="knob knob-sm" data-param="kParamMidiChannel" data-label="MIDI Ch"></div>
+        <div class="knob knob-sm" data-param="kParamGlobalTranspose" data-label="Transpose"></div>
+        <div class="knob knob-sm" data-param="kParamMaxVoices" data-label="Max Voices"></div>
+      </div>
+
+      <div class="card-divider"></div>
+
+      <div class="mod-rows">
+        <div class="mod-header">
+          <p>Mod Source</p>
+          <p>MIDI CC</p>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod1Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod1CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod2Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod2CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod3Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod3CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod4Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod4CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod5Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod5CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod6Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod6CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod7Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod7CC" min="0" max="127" />
+          </div>
+        </div>
+        <div class="mod-row">
+          <select class="dropdown mod-source-field" data-param="kParamMod8Source"></select>
+          <div class="cc-field-wrap">
+            <span class="cc-prefix">CC</span>
+            <input type="number" class="cc-field" data-param="kParamMod8CC" min="0" max="127" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card-divider"></div>
+
+      <div class="toggle-row">
+        <p class="toggle-label">Send MIDI Clock (24ppqn)</p>
+        <div class="switch" data-param="kParamSendClock" data-on-label="On" data-off-label="Off"></div>
+      </div>
+    </div>
+
+    <div class="card export-card">
+      <div class="export-header">
+        <div class="bars-selector">
+          <p class="export-label">Length:</p>
+          <div class="bars-stepper">
+            <button class="bars-btn" id="bars-dec">&#8722;</button>
+            <span class="bars-pill mono" id="bars-readout">4 BARS</span>
+            <button class="bars-btn" id="bars-inc">&#43;</button>
+          </div>
+        </div>
+      </div>
+      <button class="drag-midi-btn" id="drag-export-btn-full">
+        <span class="drag-icon">&#10021;</span>
+        <span class="drag-label">Drag Generated MIDI</span>
+      </button>
+    </div>
+
+    <div class="footer-row">
+      <p class="footer-text" id="footer-status">GEN ENGINE ACTIVE</p>
+      <div class="connection">
+        <div class="green-dot"></div>
+        <p class="footer-text mono" id="footer-summary">C Dorian &middot; Triad</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       COMPACT VIEW
+       ============================================================ -->
+  <div id="view-compact" class="view" hidden>
+
+    <div class="header-bar">
+      <div class="logo-group">
+        <div class="pulse-dot"></div>
+        <p class="compact-title">MidiGenerator v2</p>
+      </div>
+      <button class="mode-link" id="btn-goto-full">Full &#9656;</button>
+    </div>
+
+    <div class="hero-card">
+      <div class="knob-canvas">
+        <div class="ambient-ring-outer"></div>
+        <div class="ambient-ring-mid"></div>
+        <div class="ambient-ring-inner"></div>
+        <div class="knob knob-xl" id="compact-chaos-knob"></div>
+        <div class="indicator-dot"></div>
+      </div>
+      <div class="chaos-info">
+        <p class="chaos-value mono" id="compact-chaos-value">20%</p>
+        <p class="chaos-caption">Chaos</p>
+      </div>
+    </div>
+
+    <div class="density-card">
+      <div class="vslider" id="compact-density-slider"></div>
+      <div class="density-info">
+        <p class="density-label">Density</p>
+        <p class="density-value mono" id="compact-density-value">31%</p>
+        <p class="density-hint">Generative trigger overlap</p>
+      </div>
+    </div>
+
+    <div class="bottom-strip">
+      <div class="midi-badge mono" id="compact-midi-badge">CH 1</div>
+      <button class="export-handle" id="drag-export-btn-compact">
+        <span class="drag-icon-sm">&#9834;</span>
+        <span class="grip-line"></span>
+        <span class="grip-line"></span>
+      </button>
+      <p class="compact-readout mono" id="compact-summary">C Dorian &middot; Triad</p>
+    </div>
+  </div>
+
+<script src="iplug.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

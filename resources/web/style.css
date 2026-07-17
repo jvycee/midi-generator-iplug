@@ -1,0 +1,607 @@
+:root {
+  --bg: #1e1c1a;
+  --card-bg: #2a2725;
+  --card-border: #383230;
+  --input-bg: #151312;
+  --input-border: #2d2826;
+  --text-primary: #e8e4df;
+  --text-secondary: #9c948f;
+  --text-tertiary: #6b625e;
+  --accent-coral: #c4796a;
+  --accent-sage: #7a9b82;
+  --accent-lavender: #8e82a6;
+  --export-bg: #2e2422;
+  --export-border: #3f2d2a;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Master breathing-loop lengths. Defaults match a 120bpm assumption; JS
+     (updateMasterTempo in app.js) rewrites these from the real host tempo
+     once that's wired up, at half-bpm: cycleSeconds = (beats/cycle * 120) / bpm.
+     Full = 8 half-tempo beats, Compact = 12 (matches the original 8s/12s
+     Figma export exactly at 120bpm, and stays proportional at other tempos). */
+  --full-cycle: 8s;
+  --compact-cycle: 12s;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow-x: hidden;
+}
+
+.mono { font-family: var(--font-mono); }
+
+/* ==================== FULL VIEW ==================== */
+
+#view-full {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  /* 420px is the intended console-column width (matches the AU/VST3 window,
+     which is a fixed PLUG_WIDTH/HEIGHT and never actually resizes). The
+     clamp() floor only matters for the standalone iPad target, where this
+     page's own viewport genuinely varies (split view, Slide Over, rotation)
+     -- it keeps the column from overflowing/clipping at narrow widths
+     instead of pretending the desktop plugin window is resizable. */
+  max-width: clamp(300px, 92vw, 420px);
+  margin: 0 auto;
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.brand-group { display: flex; gap: 8px; align-items: center; }
+
+.pulse-indicator, .pulse-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent-coral);
+  animation: breathe-opacity var(--full-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+.pulse-dot { width: 6px; height: 6px; animation: pulse-dot-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite; }
+
+@keyframes breathe-opacity {
+  0% { opacity: 0.3; }
+  18.75% { opacity: 1; }
+  37.5%, 100% { opacity: 0.3; }
+}
+@keyframes pulse-dot-anim {
+  0%, 100% { opacity: 0.3; scale: 0.8; }
+  12.5%    { opacity: 1;   scale: 1.1; }
+  25%      { opacity: 0.3; scale: 0.8; }
+}
+
+.text-group { display: flex; flex-direction: column; gap: 1px; }
+.brand-title { margin: 0; font-weight: 700; font-size: 15px; color: var(--text-primary); }
+.brand-title span { font-weight: 400; color: var(--text-tertiary); }
+.brand-subtitle { margin: 0; font-size: 9px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.mode-link {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.mode-link:hover { color: var(--text-primary); border-color: var(--accent-coral); }
+
+/* --- drift panel (labels only now -- the knob itself is the shared
+   .hero-card / .knob-canvas treatment defined further down, alongside
+   Compact's Chaos knob) --- */
+
+/* Cards display constantly -- no looping entrance/fade animation. */
+
+.drift-labels { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.drift-label-title { margin: 0; font-size: 11px; font-weight: 700; color: var(--accent-sage); text-transform: uppercase; }
+.drift-label-value { margin: 0; font-size: 10px; color: var(--text-secondary); }
+
+/* --- cards --- */
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.card-title-row { display: flex; align-items: center; gap: 6px; }
+.card-icon { font-size: 12px; line-height: 1; }
+.card-title { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.accent-coral { color: var(--accent-coral); }
+.accent-sage { color: var(--accent-sage); }
+.accent-lavender { color: var(--accent-lavender); }
+
+.export-card { background: var(--export-bg); border-color: var(--export-border); gap: 10px; padding: 12px; }
+
+/* --- knob (generic, reused everywhere) --- */
+
+.knob:focus, .slider:focus, .vslider:focus, .switch:focus, .pill-selector:focus, select:focus, input:focus {
+  outline: 2px solid var(--accent-coral);
+  outline-offset: 2px;
+}
+
+.knob {
+  --pct: 0;
+  position: relative;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--card-bg) 62%, transparent 63%),
+    conic-gradient(var(--accent-coral) calc(var(--pct) * 1%), var(--input-border) 0);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  outline: none;
+}
+.knob::after {
+  content: '';
+  position: absolute; inset: 3px;
+  border-radius: 50%;
+  background: var(--input-bg);
+}
+.knob-sm { width: 42px; height: 42px; }
+.knob-lg { width: 52px; height: 52px; }
+.knob-xl { width: 100px; height: 100px; }
+
+.knob-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; width: 100%; }
+.knob-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.knob-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.knob-grid > .knob { margin: 0 auto; }
+
+/* knobs need a label underneath; injected as siblings by JS via wrapper */
+.knob-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.knob-cell-label { margin: 0; font-size: 10px; font-weight: 600; color: var(--text-secondary); text-align: center; }
+.knob-cell-value { margin: 0; font-size: 9px; color: var(--text-tertiary); }
+
+/* --- pill selector (Sequence Mode) --- */
+
+.pill-selector {
+  display: flex;
+  gap: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 3px;
+  width: 100%;
+}
+.pill-option {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pill-option.active { background: var(--accent-coral); color: #1e1c1a; }
+
+/* --- toggle row / switch --- */
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.toggle-label { margin: 0; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+
+.switch {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.switch::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: left 0.15s, background 0.15s;
+}
+.switch.on { background: rgba(122, 155, 130, 0.25); border-color: var(--accent-sage); }
+.switch.on::after { left: 18px; background: var(--accent-sage); }
+
+.sub-slider-row { width: 100%; }
+.sub-slider-row[hidden] { display: none; }
+
+/* --- dropdowns --- */
+
+.dropdown-row { display: flex; gap: 10px; width: 100%; }
+.dropdown-field-wrap { display: flex; flex-direction: column; gap: 4px; }
+.field-label { margin: 0; font-size: 9px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; }
+
+.dropdown {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  width: 100%;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5L5 6.5L8 3.5' stroke='%239c948f' stroke-width='1.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+}
+
+/* --- sliders (horizontal) --- */
+
+.sliders-group { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.slider-container { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.slider-header { display: flex; justify-content: space-between; font-size: 10px; }
+.slider-label { margin: 0; color: var(--text-secondary); font-weight: 600; }
+.slider-value { margin: 0; color: var(--accent-sage); }
+
+.slider {
+  --pct: 0;
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: #3a3532;
+  cursor: pointer;
+}
+.slider::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: calc(var(--pct) * 1%);
+  background: var(--accent-sage);
+  border-radius: 3px;
+}
+.slider::after {
+  content: '';
+  position: absolute; top: 50%; left: calc(var(--pct) * 1%);
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  translate: -50% -50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+/* --- perf card / mod rows --- */
+
+.card-divider { height: 1px; background: var(--input-border); width: 100%; }
+
+.mod-rows { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.mod-header { display: flex; justify-content: space-between; font-size: 9px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; margin: 0; }
+.mod-row { display: flex; gap: 10px; align-items: center; }
+.mod-source-field { flex: 1; padding: 6px 8px; font-size: 10px; }
+.cc-field-wrap {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 64px;
+}
+.cc-prefix { font-size: 10px; color: var(--accent-lavender); font-family: var(--font-mono); }
+.cc-field {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--accent-lavender);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.cc-field::-webkit-outer-spin-button, .cc-field::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* --- export card --- */
+
+.export-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.bars-selector { display: flex; align-items: center; gap: 6px; }
+.export-label { margin: 0; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.bars-stepper { display: flex; align-items: center; gap: 4px; }
+.bars-btn {
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.bars-pill {
+  background: #1c1513;
+  color: var(--accent-coral);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.drag-midi-btn {
+  width: 100%;
+  background: var(--accent-coral);
+  color: #1e1c1a;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  cursor: grab;
+  box-shadow: 0 2px 3px rgba(196, 121, 106, 0.25);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.drag-midi-btn:active { cursor: grabbing; }
+.drag-icon { font-size: 12px; }
+
+/* Momentary feedback once C++ confirms the .mid actually finished rendering
+   (MidiGenerator::OnMessage msgTag 101/102) -- the click alone doesn't mean
+   the file exists yet, so this is driven by that ack, not the click. */
+.drag-midi-btn.export-ready { background: var(--accent-sage); box-shadow: 0 2px 3px rgba(122, 155, 130, 0.3); }
+.drag-midi-btn.export-ready .drag-label::after { content: ' \2014 Ready!'; }
+.drag-midi-btn.export-failed { background: #a3564f; box-shadow: 0 2px 3px rgba(163, 86, 79, 0.3); }
+.drag-midi-btn.export-failed .drag-label::after { content: ' \2014 Failed'; }
+
+.footer-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 4px; }
+.footer-text { margin: 0; font-size: 9px; color: var(--text-tertiary); }
+.connection { display: flex; align-items: center; gap: 4px; }
+.green-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-sage); animation: breathe-opacity var(--full-cycle) ease-in-out infinite; }
+
+/* ==================== COMPACT VIEW ==================== */
+
+#view-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px;
+  max-width: clamp(280px, 88vw, 340px);
+  margin: 0 auto;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 24px;
+}
+
+.header-bar { display: flex; align-items: center; justify-content: space-between; }
+.logo-group { display: flex; gap: 6px; align-items: center; }
+.compact-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-primary); }
+
+.hero-card, .density-card {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+/* Cards display constantly -- no looping entrance/fade animation. */
+
+/* Full rebuild of the Chaos dial per the actual Figma layering: three
+   independently-rotating ambient rings behind the (functional, draggable)
+   knob, plus a pointer dot that tracks the live value. Timings/curves
+   transcribed from get_motion_context on the Compact node -- each ring
+   rotates a different direction/speed with its own squash-stretch wobble,
+   which is what makes it read as alive rather than a single spinning disc. */
+.knob-canvas {
+  position: relative;
+  width: 140px; height: 140px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.ambient-ring-outer, .ambient-ring-mid, .ambient-ring-inner {
+  position: absolute; left: 50%; top: 50%;
+  border: 1px solid var(--accent-coral);
+  translate: -50% -50%;
+  pointer-events: none;
+}
+/* Deliberately NOT perfect circles: a perfect circle rotating is invisible
+   (rotationally symmetric, nothing to see), which is why the rotate
+   keyframes below used to do nothing visually -- only the scale/opacity
+   ever read. Unequal width/height plus a lopsided 8-value border-radius
+   (the standard CSS "organic blob" trick) gives each ring a long axis and a
+   slightly hand-drawn wobble, so the rotation actually shows, and each
+   ring's asymmetry differs so they don't look like uniform copies. */
+.ambient-ring-outer {
+  width: 132px; height: 121px;
+  border-radius: 54% 46% 51% 49% / 48% 55% 45% 52%;
+  animation: ambient-ring-outer-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+@keyframes ambient-ring-outer-anim {
+  0%, 100% { opacity: 0.15; rotate: 0deg;   scale: 1 1; }
+  15%      { scale: 1.06 0.95; }
+  30%      { scale: 0.95 1.06; }
+  42.5%    { scale: 1.03 0.97; }
+  50%      { opacity: 0.4; rotate: 180deg; scale: 1 1; }
+  100%     { rotate: 360deg; }
+}
+
+.ambient-ring-mid {
+  width: 108px; height: 119px;
+  border-radius: 47% 53% 55% 45% / 52% 46% 54% 48%;
+  animation: ambient-ring-mid-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+@keyframes ambient-ring-mid-anim {
+  0%       { opacity: 0.15; rotate: 0deg; }
+  12.5%    { scale: 1.06 0.95; }
+  25%      { scale: 0.95 1.06; }
+  41.667%  { opacity: 0.4; scale: 1 1; }
+  83.333%  { opacity: 0.15; rotate: -360deg; }
+  100%     { rotate: -360deg; }
+}
+
+.ambient-ring-inner {
+  width: 93px; height: 83px;
+  border-radius: 51% 49% 46% 54% / 45% 53% 55% 47%;
+  animation: ambient-ring-inner-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+@keyframes ambient-ring-inner-anim {
+  0%       { opacity: 0.15; rotate: 0deg; }
+  10%      { scale: 1.06 0.95; }
+  20%      { scale: 0.95 1.06; }
+  33.333%  { opacity: 0.4; scale: 1 1; }
+  66.667%  { opacity: 0.15; rotate: 360deg; }
+  100%     { rotate: 360deg; }
+}
+
+/* Slow random glow on the moving rings (JS: setupRingGlow in app.js). Each
+   .knob-canvas's ring trio is independently reshuffled every 6-12s, capped
+   at 2 of the 3 glowing at once, never all three, never a fixed pattern.
+   `filter: drop-shadow` rather than `box-shadow` because these are
+   irregular blob shapes now (see the border-radius above) -- drop-shadow
+   follows the actual silhouette instead of haloing the bounding box. The
+   long `transition` is what makes each ring's glow fade in/out slowly
+   ("breathing") rather than snapping on. Applies to every .knob-canvas now
+   that both Full's Drift knob and Compact's Chaos knob share this markup. */
+.ambient-ring-outer, .ambient-ring-mid, .ambient-ring-inner {
+  transition: filter 3.5s ease-in-out;
+  filter: drop-shadow(0 0 0px transparent);
+}
+.ambient-ring-outer.ring-glow, .ambient-ring-mid.ring-glow, .ambient-ring-inner.ring-glow {
+  filter: drop-shadow(0 0 9px rgba(196, 121, 106, 0.55));
+}
+
+/* Class-based (not ID) so it applies to any hero knob, not just Compact's --
+   Full's Drift knob shares this same .knob-canvas markup now. */
+.knob-canvas .knob-xl {
+  animation: chaos-dial-breathe var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+  position: relative;
+  z-index: 1;
+}
+@keyframes chaos-dial-breathe {
+  0%, 100% { filter: brightness(1); scale: 1; }
+  25%      { filter: brightness(1.03); scale: 1.03; }
+  50%      { filter: brightness(0.98); scale: 0.98; }
+  75%      { filter: brightness(1.02); scale: 1.02; }
+}
+
+/* Tracks the knob's live value -- positioned in JS (updateKnobIndicator),
+   this animation just gives the marker itself some life while it sits there. */
+.indicator-dot {
+  position: absolute;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-coral);
+  translate: -50% -50%;
+  pointer-events: none;
+  z-index: 2;
+  animation: indicator-dot-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+@keyframes indicator-dot-anim {
+  0%      { opacity: 0.5; scale: 1; }
+  12.5%   { opacity: 1;   scale: 1.4; }
+  25%     { opacity: 0.3; scale: 0.7; }
+  41.667% { opacity: 0.8; scale: 1.2; }
+  56.667% { scale: 0.6; }
+  58.333% { opacity: 1;   scale: 1.8; animation-timing-function: cubic-bezier(0.2, 1.4, 0.5, 1); }
+  66.667% { opacity: 0.5; scale: 1; }
+  100%    { opacity: 0.5; scale: 1; }
+}
+
+.chaos-info { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.chaos-value { margin: 0; font-size: 24px; font-weight: 700; color: var(--text-primary); }
+.chaos-caption { margin: 0; font-size: 12px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.density-card { flex-direction: row; align-items: center; gap: 20px; }
+
+.vslider {
+  --pct: 0;
+  position: relative;
+  width: 4px; height: 140px;
+  border-radius: 2px;
+  background: #332f2d;
+  flex-shrink: 0;
+  cursor: ns-resize;
+}
+.vslider::before {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: calc(var(--pct) * 1%);
+  background: var(--accent-sage);
+  border-radius: 2px;
+  animation: vslider-fill-breathe var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+@keyframes vslider-fill-breathe {
+  0%, 100% { opacity: 0.7; }
+  25%      { opacity: 1; }
+  50%      { opacity: 0.5; }
+  75%      { opacity: 0.9; }
+}
+.vslider::after {
+  content: '';
+  position: absolute; left: 50%; bottom: calc(var(--pct) * 1%);
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  transform: translate(-50%, 50%);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  animation: vslider-thumb-breathe var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+@keyframes vslider-thumb-breathe {
+  0%, 100% { opacity: 0.7; scale: 1; }
+  16.7%    { opacity: 1;   scale: 1.1; }
+  33.3%    { opacity: 0.6; scale: 0.9; }
+  50%      { opacity: 1;   scale: 1.5; animation-timing-function: cubic-bezier(0.2, 1.4, 0.5, 1); }
+  58.3%    { opacity: 0.8; scale: 1; }
+  75%      { opacity: 0.7; scale: 1.15; }
+}
+
+.density-info { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.density-label { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.density-value { margin: 0; font-size: 32px; font-weight: 700; color: var(--text-primary); }
+.density-hint { margin: 0; font-size: 11px; color: var(--accent-sage); }
+
+.bottom-strip { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-top: 4px; }
+.midi-badge { background: var(--card-bg); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 4px; }
+.export-handle {
+  background: var(--card-bg);
+  border: none;
+  border-radius: 10px;
+  padding: 6px 10px;
+  display: flex; align-items: center; gap: 4px;
+  cursor: grab;
+  transition: background-color 150ms ease;
+}
+.drag-icon-sm { font-size: 11px; color: var(--text-secondary); }
+.export-handle.export-ready { background: var(--accent-sage); }
+.export-handle.export-ready .drag-icon-sm { color: #1e1c1a; }
+.export-handle.export-failed { background: #a3564f; }
+.export-handle.export-failed .drag-icon-sm { color: #1e1c1a; }
+.grip-line {
+  width: 2px; height: 8px;
+  background: var(--text-secondary);
+  opacity: 0.3;
+  border-radius: 1px;
+  animation: grip-line-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
+}
+.grip-line:nth-of-type(2) { animation-delay: 0.4s; }
+@keyframes grip-line-anim {
+  0%, 100% { opacity: 0.3; scale: 1 1; }
+  16.7%    { opacity: 0.8; scale: 1 1.3; }
+  33.3%    { opacity: 0.3; scale: 1 1; }
+}
+.compact-readout { margin: 0; font-size: 11px; color: var(--text-secondary); }

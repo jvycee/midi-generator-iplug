@@ -269,6 +269,33 @@
 		4FF231D02BFA0B260040797B /* VoiceAllocator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F6E673F21C5614C005991A9 /* VoiceAllocator.cpp */; };
 		B885CBC52304AE7300D73128 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F8F61A8202807B9003F2573 /* IPlugProcessor.cpp */; };
 		B8E22A0C220268C4007CBF4C /* IPlugVST3_ProcessorBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B8E22A0A220268C4007CBF4C /* IPlugVST3_ProcessorBase.cpp */; };
+		377D50A78592F1DB439A5E90 /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		3E6E40ECC25B01C77EE85535 /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		147AAF2797C261D64A074C4D /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		7EC8CD728F6B497A3951A8D0 /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		1199AA59680AC02A2A97E9E8 /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		7F32BA0CB63ECDBE7F586112 /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		38076DEB6C94FB19BDDCFEB5 /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		E03686EE00AF458B630B8F31 /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		4F16C98C96938071C3284162 /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		30719B5105113A832F04560A /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		D3FB9E3F1E12755D38F2040F /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		76DE1009BC44FC1383C6759E /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		5239CE5E3CF96321E3C671FD /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		5EC807ED103C8658AC0D68B2 /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		B248A92E057D904682C59912 /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		9C4F9CA01B10A3515B7A754F /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		A3F56BF76B484F7F4AAE63D1 /* IPlugWebViewEditorDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */; };
+		A6CAF7249C31A3CDD05D6EE7 /* IPlugWebView_mac.mm in Sources */ = {isa = PBXBuildFile; fileRef = EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		E6BE10865E272BA29AA462F9 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		6D3A1582116ACAB193E96C91 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		72D42A325C23DDA3C42BF945 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		7227E398485FB242AAC71319 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		290B400EE1D35AD5E8585BFF /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		AFC717FB511590AC318A4530 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		81D28FBC2F038B60E2D87EE1 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		D669F50E2BDC45C0403F432E /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
+		BE323F21314C71718D570FBE /* web in Resources */ = {isa = PBXBuildFile; fileRef = 32E09DCAFC41F1D7A7D1BC91 /* web */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -784,6 +811,9 @@
 		B8E22A0A220268C4007CBF4C /* IPlugVST3_ProcessorBase.cpp */ = {isa = PBXFileReference; indentWidth = 2; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugVST3_ProcessorBase.cpp; path = ../../../IPlug/VST3/IPlugVST3_ProcessorBase.cpp; sourceTree = "<group>"; tabWidth = 2; };
 		B8E22A0B220268C4007CBF4C /* IPlugVST3_ProcessorBase.h */ = {isa = PBXFileReference; indentWidth = 2; lastKnownFileType = sourcecode.c.h; name = IPlugVST3_ProcessorBase.h; path = ../../../IPlug/VST3/IPlugVST3_ProcessorBase.h; sourceTree = "<group>"; tabWidth = 2; };
 		B8EA6B932203868500D23A86 /* IPlugVST3_Common.h */ = {isa = PBXFileReference; indentWidth = 2; lastKnownFileType = sourcecode.c.h; name = IPlugVST3_Common.h; path = ../../../IPlug/VST3/IPlugVST3_Common.h; sourceTree = "<group>"; tabWidth = 2; };
+		33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 2; lastKnownFileType = sourcecode.cpp.objcpp; name = IPlugWebViewEditorDelegate.mm; path = ../../../IPlug/Extras/WebView/IPlugWebViewEditorDelegate.mm; sourceTree = "<group>"; tabWidth = 2; };
+		EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 2; lastKnownFileType = sourcecode.cpp.objcpp; name = IPlugWebView_mac.mm; path = ../../../IPlug/Extras/WebView/IPlugWebView_mac.mm; sourceTree = "<group>"; tabWidth = 2; };
+		32E09DCAFC41F1D7A7D1BC91 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = ../resources/web; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -854,6 +884,8 @@
 			children = (
 				52FBBED30D0CF143001C8B8A /* config.h */,
 				4F3862EE2014BBEC0009F402 /* MidiGenerator.h */,
+				33F2319CDCC97D200433515E /* IPlugWebViewEditorDelegate.mm */,
+				EF9D78C57012CE4A5940AE2D /* IPlugWebView_mac.mm */,
 				4F3862ED2014BBEC0009F402 /* MidiGenerator.cpp */,
 				4F9313232315CA1100DB2383 /* README.md */,
 				089C167CFE841241C02AAC07 /* Resources */,
@@ -880,6 +912,7 @@
 			isa = PBXGroup;
 			children = (
 				4FC82B4620BD522B00722133 /* fonts */,
+				32E09DCAFC41F1D7A7D1BC91 /* web */,
 				4FC82B4520BD522B00722133 /* img */,
 				4FA61F9922E8A96300A92C58 /* tex */,
 				4FC46E57231440B4000045E7 /* web */,
@@ -2031,6 +2064,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E6BE10865E272BA29AA462F9 /* web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2038,6 +2072,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6D3A1582116ACAB193E96C91 /* web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2045,6 +2080,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				72D42A325C23DDA3C42BF945 /* web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2052,6 +2088,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7227E398485FB242AAC71319 /* web in Resources */,
 				4F3EE1BF231438D000004786 /* MidiGenerator.icns in Resources */,
 				4F3EE1C0231438D000004786 /* MidiGenerator-macOS-MainMenu.xib in Resources */,
 			);
@@ -2061,6 +2098,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				290B400EE1D35AD5E8585BFF /* web in Resources */,
 				4F78BE3C22E74CD000AD537E /* IPlugAUViewController_vMidiGenerator.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2069,6 +2107,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AFC717FB511590AC318A4530 /* web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2076,6 +2115,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				81D28FBC2F038B60E2D87EE1 /* web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2083,6 +2123,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D669F50E2BDC45C0403F432E /* web in Resources */,
 				4F78D88613B6382B0032E0F3 /* MidiGenerator.icns in Resources */,
 				4F1B4AE42014D33600BC64D4 /* MidiGenerator-macOS-MainMenu.xib in Resources */,
 			);
@@ -2092,6 +2133,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BE323F21314C71718D570FBE /* web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2294,6 +2336,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				377D50A78592F1DB439A5E90 /* IPlugWebViewEditorDelegate.mm in Sources */,
+				3E6E40ECC25B01C77EE85535 /* IPlugWebView_mac.mm in Sources */,
 				4FF231BB2BFA0B020040797B /* VoiceAllocator.cpp in Sources */,
 				4FF231BC2BFA0B020040797B /* MidiSynth.cpp in Sources */,
 				4FDAC0EB207D76C600299363 /* IPlugTimer.cpp in Sources */,
@@ -2321,6 +2365,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				147AAF2797C261D64A074C4D /* IPlugWebViewEditorDelegate.mm in Sources */,
+				7EC8CD728F6B497A3951A8D0 /* IPlugWebView_mac.mm in Sources */,
 				4F78BE3222E7429B00AD537E /* IPlugAUv3Appex.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2329,6 +2375,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1199AA59680AC02A2A97E9E8 /* IPlugWebViewEditorDelegate.mm in Sources */,
+				7F32BA0CB63ECDBE7F586112 /* IPlugWebView_mac.mm in Sources */,
 				4F03A5AF20A4621100EBDFFB /* IGraphics.cpp in Sources */,
 				4F6369E020A464BB0022C370 /* IGraphicsNanoVG_src.m in Sources */,
 				4F6369EE20A466470022C370 /* IControl.cpp in Sources */,
@@ -2358,6 +2406,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				38076DEB6C94FB19BDDCFEB5 /* IPlugWebViewEditorDelegate.mm in Sources */,
+				E03686EE00AF458B630B8F31 /* IPlugWebView_mac.mm in Sources */,
 				4F3EE1C2231438D000004786 /* IPlugProcessor.cpp in Sources */,
 				4F3EE1C3231438D000004786 /* RtMidi.cpp in Sources */,
 				4F3EE1C5231438D000004786 /* IGraphicsNanoVG_src.m in Sources */,
@@ -2401,6 +2451,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4F16C98C96938071C3284162 /* IPlugWebViewEditorDelegate.mm in Sources */,
+				30719B5105113A832F04560A /* IPlugWebView_mac.mm in Sources */,
 				4F78BE1422E7406D00AD537E /* MidiGenerator.h in Sources */,
 				4F0D965C23099F6900BFDED0 /* IPlugProcessor.cpp in Sources */,
 				4F78BE1522E7406D00AD537E /* MidiGenerator.cpp in Sources */,
@@ -2431,6 +2483,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D3FB9E3F1E12755D38F2040F /* IPlugWebViewEditorDelegate.mm in Sources */,
+				76DE1009BC44FC1383C6759E /* IPlugWebView_mac.mm in Sources */,
 				4F81597C205D50EB00393585 /* baseiids.cpp in Sources */,
 				4FDAC0EC207D76C600299363 /* IPlugTimer.cpp in Sources */,
 				B8E22A0C220268C4007CBF4C /* IPlugVST3_ProcessorBase.cpp in Sources */,
@@ -2489,6 +2543,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5239CE5E3CF96321E3C671FD /* IPlugWebViewEditorDelegate.mm in Sources */,
+				5EC807ED103C8658AC0D68B2 /* IPlugWebView_mac.mm in Sources */,
 				4F9A82FB213DE80400BE63A4 /* IPopupMenuControl.cpp in Sources */,
 				4F993F7523055C97000313AF /* IPlugProcessor.cpp in Sources */,
 				4FDAC0EE207D76C600299363 /* IPlugTimer.cpp in Sources */,
@@ -2519,6 +2575,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B248A92E057D904682C59912 /* IPlugWebViewEditorDelegate.mm in Sources */,
+				9C4F9CA01B10A3515B7A754F /* IPlugWebView_mac.mm in Sources */,
 				B885CBC52304AE7300D73128 /* IPlugProcessor.cpp in Sources */,
 				4F10D3D9203A6719003EF82A /* RtMidi.cpp in Sources */,
 				4F6369DD20A464BB0022C370 /* IGraphicsNanoVG_src.m in Sources */,
@@ -2562,6 +2620,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A3F56BF76B484F7F4AAE63D1 /* IPlugWebViewEditorDelegate.mm in Sources */,
+				A6CAF7249C31A3CDD05D6EE7 /* IPlugWebView_mac.mm in Sources */,
 				4FD869DA27206169005A5F28 /* IPlugCLAP.cpp in Sources */,
 				4FD8699327206006005A5F28 /* IPlugTimer.cpp in Sources */,
 				4FD8699427206006005A5F28 /* IControls.cpp in Sources */,

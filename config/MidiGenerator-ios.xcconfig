@@ -14,14 +14,17 @@ BINARY_NAME = MidiGenerator
 
 // ------------------------------
 // HEADER AND LIBRARY SEARCH PATHS
-EXTRA_INC_PATHS = $(IGRAPHICS_INC_PATHS)
+// See the mac xcconfig for why IGRAPHICS_INC_PATHS/LIB_PATHS and
+// IPlug/Extras/WebView are both still needed here even though NO_IGRAPHICS
+// is defined below.
+EXTRA_INC_PATHS = $(IGRAPHICS_INC_PATHS) $(IPLUG2_ROOT)/IPlug/Extras/WebView
 EXTRA_LIB_PATHS = $(IGRAPHICS_LIB_PATHS)
-EXTRA_LNK_FLAGS = -framework Metal -framework MetalKit -framework Accelerate //$(IGRAPHICS_LNK_FLAGS)
+EXTRA_LNK_FLAGS = -framework Metal -framework MetalKit -framework WebKit
 
 //------------------------------
 // PREPROCESSOR MACROS
 
-EXTRA_ALL_DEFS = OBJC_PREFIX=vMidiGenerator IGRAPHICS_NANOVG IGRAPHICS_METAL SAMPLE_TYPE_FLOAT
+EXTRA_ALL_DEFS = OBJC_PREFIX=vMidiGenerator SAMPLE_TYPE_FLOAT IGRAPHICS_NANOVG IGRAPHICS_METAL WEBVIEW_EDITOR_DELEGATE NO_IGRAPHICS IDLE_TIMER_RATE=50
 //EXTRA_DEBUG_DEFS =
 //EXTRA_RELEASE_DEFS =
 //EXTRA_TRACER_DEFS =
@@ -51,3 +54,4 @@ GCC_INCREASE_PRECOMPILED_HEADER_SHARING = NO
 // Flags to pass to compiler for all builds
 GCC_CFLAGS = -Wno-write-strings
 
+IPHONEOS_DEPLOYMENT_TARGET = 15
