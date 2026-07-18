@@ -18,6 +18,11 @@ static int gFailures = 0;
         ++gFailures; \
     } } while (0)
 
+// For float results: e.g. 0.6f + 0.3f isn't guaranteed to equal the literal
+// 0.9f exactly in binary floating point, so a strict CHECK(a == b) on a
+// computed float is a latent flaky-test risk.
+#define CHECK_NEAR(a, b, eps) CHECK(std::fabs((a) - (b)) < (eps))
+
 static void TestEuclideanPatterns()
 {
     // E(4,16): downbeat fix means step 0 must fire, and exactly 4 of 16 steps.
@@ -137,6 +142,27 @@ static void TestChordBuilding()
     CHECK(foldIntoMidiRange(-50) >= 0 && foldIntoMidiRange(-50) <= 127);
 }
 
+static void TestChordPriority()
+{
+    // Dominant7th (0,4,7,10) rooted at C4 (60), in C Ionian (key=0). The b7
+    // (70, Bb) is not diatonic to C major -- Scale Priority must bend it
+    // onto the scale, Chord Priority must leave it exactly alone.
+    NoteSet scalePriority = buildChordInKey(60, ChordType::Dominant7th, VoicingStyle::Close, 4, 0, ScaleMode::Ionian, true);
+    NoteSet chordPriority = buildChordInKey(60, ChordType::Dominant7th, VoicingStyle::Close, 4, 0, ScaleMode::Ionian, false);
+
+    bool scalePriorityHasBb = std::find(scalePriority.begin(), scalePriority.end(), 70) != scalePriority.end();
+    bool chordPriorityHasBb = std::find(chordPriority.begin(), chordPriority.end(), 70) != chordPriority.end();
+
+    CHECK(!scalePriorityHasBb); // b7 must have been bent onto the scale
+    CHECK(chordPriorityHasBb);  // b7 must survive exactly, unquantized
+
+    // Chord Priority still folds into MIDI range and dedupes/sorts, same
+    // invariants as always -- it only skips the scale-snapping step.
+    CHECK(chordPriority.count == 4);
+    for (int i = 1; i < chordPriority.count; ++i)
+        CHECK(chordPriority.notes[i] > chordPriority.notes[i - 1]);
+}
+
 static void TestMonoMode()
 {
     EuclideanTrack t;
@@ -144,6 +170,48 @@ static void TestMonoMode()
     NoteSet mono = buildTrackNotes(t, 67, 0, ScaleMode::Ionian);
     CHECK(mono.count == 1);
     CHECK(mono.notes[0] == 67);
+}
+
+static void TestHarmonyDriftGravity()
+{
+    // Full gravity (1.0) must be deterministic: always the shorter path
+    // toward tonic, regardless of RNG draws.
+    EuclideanTrack down;
+    down.driftAmount = 1.0f;
+    down.driftGravity = 1.0f;
+    down.scaleDegree = 2; // shorter path to 0 is down (-1)
+    applyHarmonyDrift(down);
+    CHECK(down.scaleDegree == 1);
+
+    EuclideanTrack up;
+    up.driftAmount = 1.0f;
+    up.driftGravity = 1.0f;
+    up.scaleDegree = 5; // shorter path to 0 is up, wrapping (5 -> 6 -> 0)
+    applyHarmonyDrift(up);
+    CHECK(up.scaleDegree == 6);
+
+    // Gravity off (default, 0.0) must still land on a valid, in-range degree
+    // -- this is the pure-random-walk path, unchanged from before gravity existed.
+    EuclideanTrack none;
+    none.driftAmount = 1.0f;
+    applyHarmonyDrift(none);
+    CHECK(none.scaleDegree >= 0 && none.scaleDegree <= 6);
+}
+
+static void TestAccent()
+{
+    // Off by default (amount<=0): must reproduce the input velocity exactly
+    // (no arithmetic happens on this path, so strict equality is fine here).
+    CHECK(applyAccent(0.6f, 0, 4, 0.0f) == 0.6f);
+    CHECK(applyAccent(0.6f, 4, 4, 0.0f) == 0.6f);
+
+    // On an accented step (stepIndex % accentEvery == 0), boosted and capped at 1.0.
+    CHECK_NEAR(applyAccent(0.6f, 0, 4, 0.3f), 0.9f, 1e-5f);
+    CHECK(applyAccent(0.9f, 8, 4, 0.5f) == 1.0f); // capped, not 1.4 -- exact via std::min
+
+    // Off-beat (not a multiple of accentEvery): unaffected even with amount > 0.
+    CHECK(applyAccent(0.6f, 1, 4, 0.3f) == 0.6f);
+    CHECK(applyAccent(0.6f, 2, 4, 0.3f) == 0.6f);
 }
 
 static void TestScaleQuantization()
@@ -155,6 +223,24 @@ static void TestScaleQuantization()
     // A non-diatonic pitch class (C#) must move, and land back in range.
     int q = quantizeToScale(61, 0, ScaleMode::Ionian);
     CHECK(q != 61);
+}
+
+static void TestAllScaleIntervalTables()
+{
+    // Every entry (the 7 diatonic modes plus the added exotic scales) must
+    // be a well-formed 7-note scale: starts on the tonic, strictly
+    // ascending, and every interval within a single octave. Catches a typo
+    // in any row, not just the newly added ones.
+    for (int i = 0; i < getScaleModeCount(); ++i)
+    {
+        const auto& intervals = getScaleIntervals((ScaleMode)i);
+        CHECK(intervals[0] == 0);
+        for (int j = 1; j < 7; ++j)
+        {
+            CHECK(intervals[j] > intervals[j - 1]);
+            CHECK(intervals[j] >= 0 && intervals[j] <= 11);
+        }
+    }
 }
 
 static void TestMidiExportProducesAFile()
@@ -204,8 +290,12 @@ int main()
     TestRotationDrift();
     TestPatternInvert();
     TestChordBuilding();
+    TestChordPriority();
     TestMonoMode();
+    TestHarmonyDriftGravity();
+    TestAccent();
     TestScaleQuantization();
+    TestAllScaleIntervalTables();
     TestMidiExportProducesAFile();
     TestRatchet();
 

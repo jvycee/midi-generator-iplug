@@ -3,6 +3,7 @@
 #include "MidiExport.h"
 #include <cstdlib>
 #include <cstdio>
+#include <random>
 
 namespace
 {
@@ -34,7 +35,7 @@ namespace
 }
 
 MidiGenerator::MidiGenerator(const InstanceInfo& info)
-: Plugin(info, MakeConfig(kNumParams, 0)) // 0 presets for now
+: Plugin(info, MakeConfig(kNumParams, 5)) // 5 factory presets, see the MakePresetFromNamedParams calls below
 {
     // Define parameters for the host and UI
     GetParam(kParamSteps)->InitInt("Steps", 16, 1, 32);
@@ -45,6 +46,11 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     GetParam(kParamTrigOffset)->InitInt("Trig Offset", 0, 0, 7);
     GetParam(kParamRotationDriftPeriod)->InitInt("Rotation Drift", 0, 0, 128);
     GetParam(kParamRatchetCount)->InitInt("Ratchet", 1, 1, 8);
+    GetParam(kParamChordPriority)->InitBool("Chord Priority", false, "", 0, "", "Scale", "Chord");
+    GetParam(kParamDriftGravity)->InitPercentage("Drift Gravity", 0.);
+    GetParam(kParamAccentEvery)->InitInt("Accent Every", 4, 1, 8);
+    GetParam(kParamAccentAmount)->InitPercentage("Accent Amount", 0.);
+    GetParam(kParamFreeze)->InitBool("Freeze", false);
     GetParam(kParamSequenceMode)->InitEnum("Sequence Mode", (int)SequenceMode::Euclidean,
         { "Euclidean", "Density", "Chaos" });
     GetParam(kParamSequenceAmount)->InitPercentage("Density/Chaos", 50.);
@@ -55,7 +61,8 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     GetParam(kParamKey)->InitEnum("Key", 0,
         { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" });
     GetParam(kParamScaleMode)->InitEnum("Scale", (int)ScaleMode::Ionian,
-        { "Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian" });
+        { "Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian",
+          "Harmonic Minor", "Melodic Minor", "Byzantine", "Persian", "Neapolitan Minor", "Neapolitan Major", "Hungarian Minor" });
     GetParam(kParamRootNote)->InitPitch("Root", 60);
     GetParam(kParamChordType)->InitEnum("Chord Type", (int)ChordType::Minor9th,
         { "Single", "Power",  "Octave",  "Major",  "Minor",
@@ -72,6 +79,7 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     GetParam(kParamMidiChannel)->InitInt("MIDI Channel", 1, 1, 16);
     GetParam(kParamGlobalTranspose)->InitInt("Transpose", 0, -24, 24);
     GetParam(kParamExportBars)->InitInt("Export Bars", 4, 1, 16);
+    GetParam(kParamExportVariations)->InitInt("Variations", 1, 1, 8);
     GetParam(kParamMonoMode)->InitBool("Mono", false);
     GetParam(kParamMaxVoices)->InitInt("Max Voices", 8, 1, 16); // global cap across overlapping hits, not per-chord
 
@@ -93,6 +101,45 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     // app.js's onParamStateChanged -> showView()).
     GetParam(kParamUIViewMode)->InitBool("UI View Mode", false, "", IParam::kFlagCannotAutomate | IParam::kFlagMeta, "", "Full", "Compact");
 
+    // Factory presets. MakePresetFromNamedParams only needs the params that
+    // differ from default -- everything else falls back to GetParam(i)->
+    // Value() as already set by the InitXxx calls above, which is why this
+    // has to come after all of them. Param values are untyped varargs: int
+    // for bool/int/enum params, double (with an explicit decimal) for
+    // percentage params -- see GET_PARAM_FROM_VARARG in IPlugUtilities.h.
+    MakePresetFromNamedParams("Ambient Drift", 14,
+        kParamSteps, 16, kParamPulses, 5,
+        kParamChordType, (int)ChordType::Minor9th, kParamVoicing, (int)VoicingStyle::Drop2, kParamChordVoices, 4,
+        kParamHarmonyDrift, 35., kParamDriftGravity, 20.,
+        kParamNoteLength, 64, kParamGate, 90., kParamVelocity, 55.,
+        kParamRotationDriftPeriod, 24,
+        kParamClockAlign, (int)ClockAlign::Soft, kParamClockSoftAmount, 30., kParamSwing, 10.);
+
+    MakePresetFromNamedParams("Techno Hats", 11,
+        kParamMonoMode, 1, kParamSteps, 16, kParamPulses, 11, kParamRootNote, 79,
+        kParamNoteLength, 2, kParamGate, 40., kParamVelocity, 70., kParamSwing, 15.,
+        kParamAccentEvery, 4, kParamAccentAmount, 35., kParamProbability, 90.);
+
+    MakePresetFromNamedParams("Bass Pulse", 10,
+        kParamMonoMode, 1, kParamSteps, 8, kParamPulses, 4, kParamRootNote, 36,
+        kParamNoteLength, 4, kParamGate, 70., kParamVelocity, 80.,
+        kParamAccentEvery, 4, kParamAccentAmount, 25.,
+        kParamScaleMode, (int)ScaleMode::Aeolian);
+
+    MakePresetFromNamedParams("Generative Chords", 12,
+        kParamSequenceMode, (int)SequenceMode::Chaos, kParamSequenceAmount, 55.,
+        kParamChordType, (int)ChordType::Dom9th, kParamVoicing, (int)VoicingStyle::Spread, kParamChordVoices, 5,
+        kParamChordPriority, 1,
+        kParamHarmonyDrift, 25., kParamDriftGravity, 40.,
+        kParamNoteLength, 48, kParamGate, 80., kParamVelocity, 50.,
+        kParamScaleMode, (int)ScaleMode::Dorian);
+
+    MakePresetFromNamedParams("Sparse Bells", 11,
+        kParamMonoMode, 1, kParamSteps, 16, kParamPulses, 3,
+        kParamRotationDriftPeriod, 40, kParamTrigEvery, 3, kParamTrigOffset, 1,
+        kParamNoteLength, 96, kParamGate, 95., kParamVelocity, 45.,
+        kParamRootNote, 84, kParamScaleMode, (int)ScaleMode::Lydian);
+
     // Initialize our track from the params
     track.steps = GetParam(kParamSteps)->Int();
     track.pulses = GetParam(kParamPulses)->Int();
@@ -102,6 +149,7 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     track.trigOffset = GetParam(kParamTrigOffset)->Int();
     track.rotationDriftPeriod = GetParam(kParamRotationDriftPeriod)->Int();
     track.ratchetCount = GetParam(kParamRatchetCount)->Int();
+    track.chordPriority = GetParam(kParamChordPriority)->Bool();
     track.rootNote = GetParam(kParamRootNote)->Int();
     track.voicing = static_cast<VoicingStyle>(GetParam(kParamVoicing)->Int());
     track.monoMode = GetParam(kParamMonoMode)->Bool();
@@ -115,6 +163,9 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     track.chordType = static_cast<ChordType>(GetParam(kParamChordType)->Int());
     track.chordNotes = GetParam(kParamChordVoices)->Int();
     track.driftAmount = (float)(GetParam(kParamHarmonyDrift)->Value() / 100.);
+    track.driftGravity = (float)(GetParam(kParamDriftGravity)->Value() / 100.);
+    track.accentEvery = GetParam(kParamAccentEvery)->Int();
+    track.accentAmount = (float)(GetParam(kParamAccentAmount)->Value() / 100.);
 
     globalParams.globalSwing = (float)(GetParam(kParamSwing)->Value() / 100.);
     globalParams.clockAlign = static_cast<ClockAlign>(GetParam(kParamClockAlign)->Int());
@@ -122,6 +173,10 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     globalParams.key = GetParam(kParamKey)->Int();
     globalParams.scaleMode = static_cast<ScaleMode>(GetParam(kParamScaleMode)->Int());
     globalParams.globalTranspose = GetParam(kParamGlobalTranspose)->Int();
+
+    sendClock = GetParam(kParamSendClock)->Bool();
+    maxVoices = std::max(1, GetParam(kParamMaxVoices)->Int());
+    freeze = GetParam(kParamFreeze)->Bool();
 
     for (int i = 0; i < 8; ++i)
     {
@@ -197,6 +252,18 @@ void MidiGenerator::OnParamChange(int paramIdx)
         case kParamHarmonyDrift:
             track.driftAmount = (float)(GetParam(kParamHarmonyDrift)->Value() / 100.);
             break;
+        case kParamDriftGravity:
+            track.driftGravity = (float)(GetParam(kParamDriftGravity)->Value() / 100.);
+            break;
+        case kParamAccentEvery:
+            track.accentEvery = GetParam(kParamAccentEvery)->Int();
+            break;
+        case kParamAccentAmount:
+            track.accentAmount = (float)(GetParam(kParamAccentAmount)->Value() / 100.);
+            break;
+        case kParamFreeze:
+            freeze = GetParam(kParamFreeze)->Bool();
+            break;
         case kParamSteps:
             track.steps = GetParam(kParamSteps)->Int();
             rebuildTrackPattern(track);
@@ -220,6 +287,9 @@ void MidiGenerator::OnParamChange(int paramIdx)
             break;
         case kParamRatchetCount:
             track.ratchetCount = GetParam(kParamRatchetCount)->Int();
+            break;
+        case kParamChordPriority:
+            track.chordPriority = GetParam(kParamChordPriority)->Bool();
             break;
         case kParamRootNote:
             track.rootNote = GetParam(kParamRootNote)->Int();
@@ -245,6 +315,12 @@ void MidiGenerator::OnParamChange(int paramIdx)
         case kParamGlobalTranspose:
             globalParams.globalTranspose = GetParam(kParamGlobalTranspose)->Int();
             break;
+        case kParamSendClock:
+            sendClock = GetParam(kParamSendClock)->Bool();
+            break;
+        case kParamMaxVoices:
+            maxVoices = std::max(1, GetParam(kParamMaxVoices)->Int());
+            break;
         default:
             break;
     }
@@ -261,17 +337,24 @@ bool MidiGenerator::OnMessage(int msgTag, int ctrlTag, int dataSize, const void*
             // NO_IGRAPHICS means there's no IGraphics::InitiateExternalFileDragDrop()
             // to hand this off as a native OS drag session (that API lives on
             // IGraphics, which doesn't exist in a WebView-only build). Reveal
-            // it in Finder instead so the export is still one click away from
-            // being dragged into the DAW by hand. Mac-only: there's no Finder
-            // (or `open`) to shell out to on iOS.
+            // it in Finder as a fallback so the export is always at least one
+            // click away from being dragged into the DAW by hand. Mac-only:
+            // there's no Finder (or `open`) to shell out to on iOS.
             WDL_String cmd;
             cmd.SetFormatted(1200, "open -R \"%s\"", path.Get());
             system(cmd.Get());
 #endif
+            // Also send the resolved path back so app.js can wire up a real
+            // OS-level drag via WebKit's DownloadURL drag flavor (see
+            // requestExport()/onExportResult() -- the same mechanism sites
+            // like Gmail use for "drag this attachment to your desktop").
+            // Unverified against a real host/DAW in this environment; the
+            // Finder reveal above is the safety net if it doesn't pan out.
+            //
             // WebViewEditorDelegate's override of this hides IEditorDelegate's
             // default arguments (defaults aren't inherited across an
             // override) -- dataSize/pData must be passed explicitly here.
-            SendArbitraryMsgFromDelegate(kMsgTagExportSucceeded, 0, nullptr);
+            SendArbitraryMsgFromDelegate(kMsgTagExportSucceeded, path.GetLength(), path.Get());
         }
         else
         {
@@ -280,7 +363,27 @@ bool MidiGenerator::OnMessage(int msgTag, int ctrlTag, int dataSize, const void*
         return true;
     }
 
+    if (msgTag == kMsgTagRerollRequest) // from app.js's requestReroll()
+    {
+        ReseedTrack(track);
+        return true;
+    }
+
     return false;
+}
+
+// static
+void MidiGenerator::ReseedTrack(EuclideanTrack& t)
+{
+    // A new RNG stream, scale degree back to the tonic, and a fresh (non-
+    // fixed-point) logistic-map state for Chaos mode -- gives an actually
+    // fresh starting point rather than a fixed one that'd make every reseed
+    // retrace the exact same "random" path.
+    std::random_device rd;
+    t.rngState = rd();
+    if (t.rngState == 0) t.rngState = 0x9E3779B9u; // xorshift32 guards 0 too, but avoid relying on it twice
+    t.scaleDegree = 0;
+    t.chaosX = 0.1 + (double)(rd() % 8000) / 10000.0; // fresh value in [0.1, 0.9), clear of both fixed points
 }
 
 void MidiGenerator::OnIdle()
@@ -307,10 +410,21 @@ void MidiGenerator::OnReset()
 
 void MidiGenerator::SendModCCs()
 {
-    for (const ModSlot& slot : modSlots)
+    for (int i = 0; i < 8; ++i)
     {
+        const ModSlot& slot = modSlots[i];
         if (slot.source == ModSource::Off) continue;
         float value = evaluateModSource(track, slot.source);
+
+        // Random is meant to move continuously; everything else only
+        // actually changes on a new hit, so between hits the 50Hz ticker
+        // would otherwise resend an unchanged value every tick -- flooding
+        // whatever's downstream with identical CC messages.
+        int quantized = std::clamp((int)(value * 127.0f), 0, 127);
+        if (slot.source != ModSource::Random && quantized == lastSentCCValue[i])
+            continue;
+        lastSentCCValue[i] = quantized;
+
         IMidiMsg ccMsg;
         ccMsg.MakeControlChangeMsg(static_cast<IMidiMsg::EControlChangeMsg>(slot.ccNumber), value, track.midiChannel - 1);
         SendMidiMsg(ccMsg);
@@ -372,7 +486,6 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     }
 
     bool transportRunning = GetTransportIsRunning();
-    bool sendClock = GetParam(kParamSendClock)->Bool();
 
     if (sendClock && transportRunning != wasTransportRunning)
     {
@@ -424,7 +537,11 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
         int stepIndex = current16thNote % track.steps;
         int loopIndex = current16thNote / track.steps;
         int rotationDriftSteps = track.rotationDriftPeriod > 0 ? (current16thNote / track.rotationDriftPeriod) : 0;
-        if (evaluateTrigCondition(track, loopIndex) && evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
+        // !freeze short-circuits before any RNG draw (trig/density/chaos/
+        // probability), so Freeze genuinely pauses the generative state,
+        // not just playback -- whatever's already ringing in activeNotes/
+        // pendingNotes still decays normally below, untouched.
+        if (!freeze && evaluateTrigCondition(track, loopIndex) && evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
         {
             applyHarmonyDrift(track);
             int scaleRoot = scaleDegreeToNote(globalParams.key, globalParams.scaleMode, track.scaleDegree, track.rootNote);
@@ -445,7 +562,6 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
             // (activeNotes before never-yet-triggered pendingNotes) rather
             // than just dropping the new hit, so the sequence still feels
             // continuous instead of periodically going silent.
-            int maxVoices = std::max(1, GetParam(kParamMaxVoices)->Int());
             if (notes.count > maxVoices)
                 notes.count = maxVoices;
 
@@ -474,15 +590,23 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
             // breathe. Never louder than the knob setting, just sometimes
             // softer, so raising Velocity still sets a reliable ceiling.
             float humanizedVelocity = track.velocity * (1.0f - randUnit01(track.rngState) * 0.2f);
+            humanizedVelocity = applyAccent(humanizedVelocity, stepIndex, track.accentEvery, track.accentAmount);
             int velocity = std::max(1, static_cast<int>(humanizedVelocity * 127.0f));
             int timingOffset = computeTimingOffsetSamples(track, current16thNote, globalParams, sixteenthNoteSamples);
 
             // Ratchet: only for hits that resolve to a single note -- see
-            // EuclideanTrack::ratchetCount. Confined to this one step's
-            // duration, overriding noteLengthSteps/gate for this hit only.
+            // EuclideanTrack::ratchetCount. Spreads retriggers across up to a
+            // full beat (4 steps) rather than cramming them into a single
+            // 16th note -- confining to one step meant even Ratchet=2
+            // collapsed a multi-second sustained note into ~50ms blips, a
+            // jarring cliff rather than a gradual increase in busyness.
+            // Capped at the note's own length so a short, already-punchy
+            // note isn't stretched wider than it was configured to be.
             int ratchetCount = std::clamp(track.ratchetCount, 1, 8);
             bool applyRatchet = ratchetCount > 1 && notes.count == 1;
-            int ratchetSliceSamples = std::max(1, sixteenthNoteSamples / ratchetCount);
+            int ratchetSpanSteps = std::min(std::max(1, track.noteLengthSteps), 4);
+            int ratchetSpanSamples = sixteenthNoteSamples * ratchetSpanSteps;
+            int ratchetSliceSamples = std::max(1, ratchetSpanSamples / ratchetCount);
             int ratchetGateSamples = std::max(1, (int)(ratchetSliceSamples * track.gate));
 
             SendModCCs();
@@ -535,22 +659,45 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 
 WDL_String MidiGenerator::ExportPatternAsMidiFile()
 {
-    EuclideanTrack trackCopy = track;
     int numBars = GetParam(kParamExportBars)->Int();
+    int variations = std::clamp(GetParam(kParamExportVariations)->Int(), 1, 8);
     double bpm = GetTempo();
     if (bpm <= 0.0) bpm = 120.0;
-
-    int maxVoices = std::max(1, GetParam(kParamMaxVoices)->Int());
-    auto bytes = MidiExport::renderPatternToSMF(trackCopy, globalParams, bpm, numBars, modSlots, 8, maxVoices);
 
     const char* tmpDir = std::getenv("TMPDIR");
     if (!tmpDir || !*tmpDir) tmpDir = "/tmp";
 
-    WDL_String path;
-    path.SetFormatted(1024, "%s/MidiGenerator_Export.mid", tmpDir);
+    // Reveals the FIRST file in Finder (see OnMessage) -- since all
+    // variations land in the same folder, that shows every file at once,
+    // no need to reveal each individually.
+    WDL_String firstPath;
 
-    if (!MidiExport::writeSMFFile(bytes, path.Get()))
-        return WDL_String();
+    for (int v = 0; v < variations; ++v)
+    {
+        EuclideanTrack trackCopy = track;
 
-    return path;
+        // Variation 0 always exports exactly the live track's current
+        // state -- unreseeded -- so "1 variation" (the default) is byte-
+        // for-byte the same export this always produced, untouched by this
+        // feature. Only variations beyond the first get a fresh reseed
+        // (same as Reroll), applied to this offline copy only -- the
+        // actually-playing track is never touched by export.
+        if (v > 0)
+            ReseedTrack(trackCopy);
+
+        auto bytes = MidiExport::renderPatternToSMF(trackCopy, globalParams, bpm, numBars, modSlots, 8, maxVoices);
+
+        WDL_String path;
+        if (variations == 1)
+            path.SetFormatted(1024, "%s/MidiGenerator_Export.mid", tmpDir);
+        else
+            path.SetFormatted(1024, "%s/MidiGenerator_Export_%d.mid", tmpDir, v + 1);
+
+        if (!MidiExport::writeSMFFile(bytes, path.Get()))
+            return WDL_String(); // bail on the first failure -- a partial batch isn't useful
+
+        if (v == 0) firstPath = path;
+    }
+
+    return firstPath;
 }

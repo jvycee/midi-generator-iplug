@@ -117,6 +117,7 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
         // there. Uses the track's own RNG so the exported file's velocity
         // pattern is generated the same way live playback's is.
         float humanizedVelocity = track.velocity * (1.0f - randUnit01(track.rngState) * 0.2f);
+        humanizedVelocity = applyAccent(humanizedVelocity, stepIndex, track.accentEvery, track.accentAmount);
         int velocity = std::min(127, std::max(1, (int)(humanizedVelocity * 127.0f)));
         int timingOffsetTicks = computeTimingOffsetSamples(track, step, globalParams, sixteenthNoteTicks);
 
@@ -127,7 +128,9 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
         // see EuclideanTrack::ratchetCount and the comment in ProcessBlock.
         int ratchetCount = std::clamp(track.ratchetCount, 1, 8);
         bool applyRatchet = ratchetCount > 1 && notes.count == 1;
-        int ratchetSliceTicks = std::max(1, sixteenthNoteTicks / ratchetCount);
+        int ratchetSpanSteps = std::min(std::max(1, track.noteLengthSteps), 4);
+        int ratchetSpanTicks = sixteenthNoteTicks * ratchetSpanSteps;
+        int ratchetSliceTicks = std::max(1, ratchetSpanTicks / ratchetCount);
         int ratchetGateTicks = std::max(1, (int)(ratchetSliceTicks * track.gate));
 
         for (int mi = 0; mi < numModSlots; ++mi)

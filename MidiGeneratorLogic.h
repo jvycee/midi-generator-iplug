@@ -247,6 +247,17 @@ enum class ScaleMode : int
     Mixolydian,
     Aeolian,        // Natural minor
     Locrian,
+    // Appended after the 7 diatonic modes so no existing value shifts.
+    // All still 7-note scales, so they need no changes to the fixed-7
+    // scale-degree machinery (scaleDegreeToNote, harmony drift's mod-7
+    // wrap, quantizeToScale) -- just a different interval set.
+    HarmonicMinor,
+    MelodicMinor,     // ascending form
+    Byzantine,        // aka Double Harmonic Major
+    Persian,
+    NeapolitanMinor,
+    NeapolitanMajor,
+    HungarianMinor,   // aka Gypsy Minor
     Count
 };
 
@@ -254,7 +265,7 @@ inline int getScaleModeCount() { return (int)ScaleMode::Count; }
 
 inline const std::array<int, 7>& getScaleIntervals(ScaleMode m)
 {
-    static const std::array<std::array<int, 7>, 7> table = {{
+    static const std::array<std::array<int, 7>, (size_t)ScaleMode::Count> table = {{
         {0, 2, 4, 5, 7, 9, 11},  // Ionian
         {0, 2, 3, 5, 7, 9, 10},  // Dorian
         {0, 1, 3, 5, 7, 8, 10},  // Phrygian
@@ -262,6 +273,13 @@ inline const std::array<int, 7>& getScaleIntervals(ScaleMode m)
         {0, 2, 4, 5, 7, 9, 10},  // Mixolydian
         {0, 2, 3, 5, 7, 8, 10},  // Aeolian
         {0, 1, 3, 5, 6, 8, 10},  // Locrian
+        {0, 2, 3, 5, 7, 8, 11},  // HarmonicMinor (natural minor with a raised 7th)
+        {0, 2, 3, 5, 7, 9, 11},  // MelodicMinor, ascending (natural minor with a raised 6th and 7th)
+        {0, 1, 4, 5, 7, 8, 11},  // Byzantine / Double Harmonic Major
+        {0, 1, 4, 5, 6, 8, 11},  // Persian
+        {0, 1, 3, 5, 7, 8, 11},  // NeapolitanMinor
+        {0, 1, 3, 5, 7, 9, 11},  // NeapolitanMajor
+        {0, 2, 3, 6, 7, 8, 11},  // HungarianMinor / Gypsy Minor
     }};
     return table[(size_t)m];
 }
@@ -300,12 +318,23 @@ inline int scaleDegreeToNote(int key, ScaleMode mode, int degreeIndex, int refer
     return note;
 }
 
-// Builds a chord as buildChord() does, then pulls every tone back onto the
-// chosen key/scale. Re-sorts and re-dedupes afterward: independent
-// quantization can collapse two chord tones onto the same pitch (e.g. a
-// diminished 5th snapping to the same scale step as its neighbor), and two
-// note-ons for the same pitch is the duplicate-note-off hazard buildChord()
-// already guards against above.
+// Builds a chord as buildChord() does, then (when quantizeToScaleEnabled)
+// pulls every tone back onto the chosen key/scale. Re-sorts and re-dedupes
+// afterward: independent quantization can collapse two chord tones onto the
+// same pitch (e.g. a diminished 5th snapping to the same scale step as its
+// neighbor), and two note-ons for the same pitch is the duplicate-note-off
+// hazard buildChord() already guards against above.
+//
+// quantizeToScaleEnabled=false ("Chord Priority") skips that snapping
+// entirely, so the chord comes out with the exact chromatic intervals its
+// ChordType defines (a Dominant7th is really root+4+7+10) instead of
+// whatever those tones bend into once forced onto the scale -- in most
+// keys a chord's altered/chromatic tones (a b7, a #5, ...) simply aren't
+// diatonic, so the default ("Scale Priority") quantization can silently
+// turn the chord you picked into a different chord. Neither is "more
+// correct": Scale Priority guarantees everything stays in-key at the cost
+// of chord identity; Chord Priority guarantees chord identity at the cost
+// of possibly stepping outside the key.
 //
 // That collapse used to just silently return fewer notes than `numNotes` --
 // which is exactly why some hits come out noticeably quieter than others
@@ -314,12 +343,13 @@ inline int scaleDegreeToNote(int key, ScaleMode mode, int degreeIndex, int refer
 // consistent hit-to-hit, pad back up to `numNotes` by octave-doubling
 // existing tones rather than leaving the chord thinned.
 inline NoteSet buildChordInKey(int rootNote, ChordType type, VoicingStyle voicing,
-                                int numNotes, int key, ScaleMode mode)
+                                int numNotes, int key, ScaleMode mode,
+                                bool quantizeToScaleEnabled = true)
 {
     NoteSet result = buildChord(rootNote, type, voicing, numNotes);
 
     for (int& n : result)
-        n = foldIntoMidiRange(quantizeToScale(n, key, mode));
+        n = quantizeToScaleEnabled ? foldIntoMidiRange(quantizeToScale(n, key, mode)) : foldIntoMidiRange(n);
 
     std::sort(result.begin(), result.end());
     result.count = (int)(std::unique(result.begin(), result.end()) - result.begin());
@@ -426,6 +456,14 @@ struct EuclideanTrack
     VoicingStyle voicing    = VoicingStyle::Close;
     int chordNotes          = 3;
 
+    // false ("Scale Priority", default): every chord tone gets snapped onto
+    // the current key/scale, same as before this existed -- guarantees
+    // nothing clashes with the key, at the cost of possibly bending the
+    // chord you picked into a different one. true ("Chord Priority"): the
+    // chord keeps its exact chromatic intervals, unquantized -- see
+    // buildChordInKey's comment for the full tradeoff.
+    bool chordPriority = false;
+
     // When on, every hit is exactly the scale-quantized root note -- no
     // chord/voicing math at all. For lead lines, bass, and monophonic synth
     // patches, which want one note per hit and no ambiguity about which
@@ -445,16 +483,18 @@ struct EuclideanTrack
     float gate          = 0.85f;
     float probability   = 1.0f;
 
-    // Retriggers a hit ratchetCount times within the current 16th-note step
-    // instead of one sustained note-on. 1 = off (unchanged behavior). Scoped
-    // to hits that resolve to a single note (monoMode, or any chord voicing
-    // that happens to collapse to one note) -- ratcheting a full chord would
-    // multiply note count by ratchetCount per hit, straight into the
-    // polyphony cap; a rapid single-note burst is the actually-useful case
-    // (drum-machine-style rolls) and never stresses voice count regardless
-    // of ratchetCount, since retriggers are sequential, not simultaneous.
-    // Overrides noteLengthSteps/gate for that hit -- a ratchet is a burst
-    // confined to one step, not N copies of a potentially many-bar sustain.
+    // Retriggers a hit ratchetCount times, spread across up to a full beat
+    // (4 steps, or the note's own length if shorter -- see ProcessBlock/
+    // MidiExport's ratchetSpanSteps) instead of one sustained note-on. 1 =
+    // off (unchanged behavior). Scoped to hits that resolve to a single note
+    // (monoMode, or any chord voicing that happens to collapse to one note)
+    // -- ratcheting a full chord would multiply note count by ratchetCount
+    // per hit, straight into the polyphony cap; a rapid single-note burst is
+    // the actually-useful case (drum-machine-style rolls) and never stresses
+    // voice count regardless of ratchetCount, since retriggers are
+    // sequential, not simultaneous. Overrides noteLengthSteps/gate for that
+    // hit -- a ratchet is a burst confined to its span, not N copies of a
+    // potentially many-bar sustain.
     int ratchetCount = 1;
 
     SequenceMode seqMode = SequenceMode::Euclidean;
@@ -469,6 +509,23 @@ struct EuclideanTrack
     // wander through the mode rather than a fixed chord every time.
     int scaleDegree    = 0;
     float driftAmount  = 0.0f;
+
+    // driftGravity biases which direction a drift step takes: 0 (default) is
+    // an unweighted coin flip -- a pure random walk that can wander onto any
+    // degree with equal likelihood and never has to resolve, which is
+    // exactly what a lot of ambient/generative use wants. 1.0 always steps
+    // toward the tonic by the shorter path (real voice-leading's "pull home"
+    // tendency); values between are a tunable blend. Deliberately not a
+    // fixed behavior either way -- the two are legitimately different goals,
+    // not a bug on one side.
+    float driftGravity = 0.0f;
+
+    // Accent: boosts the velocity fraction by up to accentAmount (capped at
+    // 1.0) every accentEvery-th step, so the rhythm has a felt downbeat
+    // instead of every hit landing at the same dynamic level. amount<=0
+    // (default) is fully off regardless of accentEvery.
+    int accentEvery     = 4;
+    float accentAmount  = 0.0f;
 
     // Heads-up: every track defaults to channel 1. Two tracks whose chords
     // overlap on a pitch will steal each other's note-offs. Consider
@@ -492,7 +549,7 @@ inline NoteSet buildTrackNotes(const EuclideanTrack& t, int scaleRoot, int key, 
         return single;
     }
 
-    return buildChordInKey(scaleRoot, t.chordType, t.voicing, t.chordNotes, key, mode);
+    return buildChordInKey(scaleRoot, t.chordType, t.voicing, t.chordNotes, key, mode, !t.chordPriority);
 }
 
 //==============================================================================
@@ -604,15 +661,36 @@ inline bool evaluateStepTrigger(EuclideanTrack& t, int stepIndex, int rotationDr
 // Called once per triggered hit, before the chord for that hit is built.
 // Rolls driftAmount and, on success, steps scaleDegree by +/-1 (wrapping
 // within the octave) -- the source of the track's slow harmonic wander.
+// driftGravity (0 = pure coin flip, 1 = always toward tonic) biases which
+// of the two directions gets chosen -- see EuclideanTrack::driftGravity.
 inline void applyHarmonyDrift(EuclideanTrack& t)
 {
     if (t.driftAmount <= 0.0f) return;
 
     if (randUnit01(t.rngState) < t.driftAmount)
     {
-        int step = (randUnit01(t.rngState) < 0.5f) ? -1 : 1;
+        // Shorter path back to degree 0 within a 7-note octave: down from
+        // 1-3, up (wrapping) from 4-6. At the tonic itself either direction
+        // is equally "away", so gravity has nothing to bias toward.
+        int towardTonic = (t.scaleDegree == 0)
+                         ? ((randUnit01(t.rngState) < 0.5f) ? -1 : 1)
+                         : (t.scaleDegree <= 3 ? -1 : 1);
+
+        float pTowardTonic = 0.5f + 0.5f * std::clamp(t.driftGravity, 0.0f, 1.0f);
+        int step = (randUnit01(t.rngState) < pTowardTonic) ? towardTonic : -towardTonic;
         t.scaleDegree = ((t.scaleDegree + step) % 7 + 7) % 7;
     }
+}
+
+// Boosts a velocity fraction (0-1) on an accented step, capped at 1.0 -- see
+// EuclideanTrack::accentEvery/accentAmount. A no-op (returns velocityFraction
+// unchanged) whenever accentAmount<=0 or accentEvery<=0, reproducing the
+// exact pre-accent velocity.
+inline float applyAccent(float velocityFraction, int stepIndex, int accentEvery, float accentAmount)
+{
+    if (accentAmount <= 0.0f || accentEvery <= 0) return velocityFraction;
+    if ((stepIndex % accentEvery) != 0) return velocityFraction;
+    return std::min(1.0f, velocityFraction + accentAmount);
 }
 
 // Sample offset to delay a hit's note-on by, given the current global 16th

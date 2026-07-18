@@ -13,7 +13,7 @@ const PARAMS = [
   /* 5  */ { name: 'kParamClockAlign',      type: 'enum',    options: ['Hard', 'Soft'], def: 0 },
   /* 6  */ { name: 'kParamClockSoftAmount', type: 'percent', def: 25 },
   /* 7  */ { name: 'kParamKey',             type: 'enum',    options: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'], def: 0 },
-  /* 8  */ { name: 'kParamScaleMode',       type: 'enum',    options: ['Ionian','Dorian','Phrygian','Lydian','Mixolydian','Aeolian','Locrian'], def: 0 },
+  /* 8  */ { name: 'kParamScaleMode',       type: 'enum',    options: ['Ionian','Dorian','Phrygian','Lydian','Mixolydian','Aeolian','Locrian','Harmonic Minor','Melodic Minor','Byzantine','Persian','Neapolitan Minor','Neapolitan Major','Hungarian Minor'], def: 0 },
   /* 9  */ { name: 'kParamChordType',       type: 'enum',    options: ['Single','Power','Octave','Major','Minor','Dim','Aug','Sus2','Sus4','Maj7','Min7','Dom7','Min9','Maj9','Dom9','Min11','Maj6','Min6','HalfDim7','Dim7'], def: 12 },
   /* 10 */ { name: 'kParamChordVoices',     type: 'int',     min: 1, max: 6, def: 4 },
   /* 11 */ { name: 'kParamHarmonyDrift',    type: 'percent', def: 20 },
@@ -52,6 +52,12 @@ const PARAMS = [
   /* 44 */ { name: 'kParamTrigOffset',      type: 'int',     min: 0, max: 7, def: 0 },
   /* 45 */ { name: 'kParamRotationDriftPeriod', type: 'int', min: 0, max: 128, def: 0 },
   /* 46 */ { name: 'kParamRatchetCount',    type: 'int',     min: 1, max: 8, def: 1 },
+  /* 47 */ { name: 'kParamChordPriority',   type: 'bool',    def: 0 },
+  /* 48 */ { name: 'kParamDriftGravity',    type: 'percent', def: 0 },
+  /* 49 */ { name: 'kParamAccentEvery',     type: 'int',     min: 1, max: 8, def: 4 },
+  /* 50 */ { name: 'kParamAccentAmount',    type: 'percent', def: 0 },
+  /* 51 */ { name: 'kParamFreeze',          type: 'bool',    def: 0 },
+  /* 52 */ { name: 'kParamExportVariations',type: 'int',     min: 1, max: 8, def: 1 },
 ];
 
 const NAME_TO_IDX = {};
@@ -477,6 +483,9 @@ function onParamStateChanged(idx) {
   if (name === 'kParamExportBars') {
     document.getElementById('bars-readout').textContent = state[paramIdx('kParamExportBars')] + ' BARS';
   }
+  if (name === 'kParamExportVariations') {
+    document.getElementById('variations-readout').textContent = state[paramIdx('kParamExportVariations')];
+  }
   if (name === 'kParamMidiChannel') {
     document.getElementById('compact-midi-badge').textContent = 'CH ' + state[paramIdx('kParamMidiChannel')];
   }
@@ -600,14 +609,21 @@ function showView(name) {
 }
 
 // ==========================================================================
-// Drag-to-DAW export. Real file drag needs InitiateExternalFileDragDrop()
-// on the C++ side (native-only API, not exposed to WebView) -- wiring that
-// up is tracked separately. For now this sends a request to the host and
-// gives click feedback in preview mode.
+// Drag-to-DAW export. IGraphics::InitiateExternalFileDragDrop() isn't
+// available here (native-only API, this is a WebView-only NO_IGRAPHICS
+// build) -- but WebKit (what WKWebView on macOS is) separately supports
+// dragging a file OUT to the Finder/another app via the 'DownloadURL' drag
+// data flavor: set dataTransfer.setData('DownloadURL', 'mime:name:fileUrl')
+// on dragstart and the OS treats the drag as if it originated from a real
+// file. It's the same mechanism sites like Gmail use for "drag this
+// attachment to your desktop." Unverified against a real DAW from this
+// environment -- the Finder-reveal fallback (MidiGenerator.cpp's OnMessage)
+// still fires unconditionally, so nothing regresses if this doesn't pan out.
 // ==========================================================================
 
 const exportBtns = ['drag-export-btn-full', 'drag-export-btn-compact'].map(id => document.getElementById(id));
 let exportFeedbackTimer = null;
+let lastExportedFilePath = null; // absolute path from the last successful export, for the DownloadURL drag below
 
 function setExportButtonState(state) {
   exportBtns.forEach(btn => {
@@ -621,17 +637,42 @@ function setExportButtonState(state) {
 function requestExport() {
   SAMFUI(100 /* msgTag: export request, arbitrary constant agreed with C++ */);
   if (!window.IPLUG_HAS_HOST) {
-    console.log('[preview] Drag-export clicked -- wire to InitiateExternalFileDragDrop on the C++ side.');
+    console.log('[preview] Drag-export clicked -- no host to render a file.');
+  }
+}
+
+// dragstart handler for the export buttons -- only does anything once a
+// file actually exists (i.e. after at least one successful export; see
+// lastExportedFilePath). Before that, dragging the button does nothing
+// beyond the browser's default (no-op) drag, which is fine: the button's
+// own click handler (requestExport) is still the way to render the first take.
+function onExportDragStart(e) {
+  if (!lastExportedFilePath) return;
+  const fileName = lastExportedFilePath.split('/').pop();
+  const fileUrl = 'file://' + lastExportedFilePath;
+  e.dataTransfer.setData('DownloadURL', `audio/midi:${fileName}:${fileUrl}`);
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
+// Reseeds the generative wander (RNG, Chaos state, harmony position) to a
+// fresh starting point -- see MidiGenerator::OnMessage. Fire-and-forget, no
+// success/fail round trip needed the way export has one.
+function requestReroll() {
+  SAMFUI(104 /* msgTag: reroll request, arbitrary constant agreed with C++ */);
+  if (!window.IPLUG_HAS_HOST) {
+    console.log('[preview] Reroll clicked -- no host to reseed.');
   }
 }
 
 // Called from OnMessage() below once the C++ side confirms the render
 // actually finished (SendArbitraryMsgFromDelegate(101/102), MidiGenerator.cpp
-// OnMessage) -- the click alone doesn't mean the file exists yet.
-function onExportResult(success) {
+// OnMessage) -- the click alone doesn't mean the file exists yet. `filePath`
+// is only present on success (101); see onExportDragStart above.
+function onExportResult(success, filePath) {
   clearTimeout(exportFeedbackTimer);
   setExportButtonState(success ? 'ready' : 'failed');
   exportFeedbackTimer = setTimeout(() => setExportButtonState(null), 1600);
+  if (success && filePath) lastExportedFilePath = filePath;
 }
 
 // ==========================================================================
@@ -696,6 +737,12 @@ function boot() {
   document.getElementById('btn-goto-full').addEventListener('click', () => setParam(viewModeIdx, 0));
   document.getElementById('drag-export-btn-full').addEventListener('click', requestExport);
   document.getElementById('drag-export-btn-compact').addEventListener('click', requestExport);
+  exportBtns.forEach(btn => {
+    if (!btn) return;
+    btn.draggable = true;
+    btn.addEventListener('dragstart', onExportDragStart);
+  });
+  document.getElementById('btn-reroll').addEventListener('click', requestReroll);
 
   document.getElementById('bars-dec').addEventListener('click', () => {
     const idx = paramIdx('kParamExportBars');
@@ -706,9 +753,19 @@ function boot() {
     gestureBegin(idx); setParam(idx, state[idx] + 1); gestureEnd(idx);
   });
 
+  document.getElementById('variations-dec').addEventListener('click', () => {
+    const idx = paramIdx('kParamExportVariations');
+    gestureBegin(idx); setParam(idx, state[idx] - 1); gestureEnd(idx);
+  });
+  document.getElementById('variations-inc').addEventListener('click', () => {
+    const idx = paramIdx('kParamExportVariations');
+    gestureBegin(idx); setParam(idx, state[idx] + 1); gestureEnd(idx);
+  });
+
   refreshAllControls();
   updateSummaryReadouts();
   document.getElementById('bars-readout').textContent = state[paramIdx('kParamExportBars')] + ' BARS';
+  document.getElementById('variations-readout').textContent = state[paramIdx('kParamExportVariations')];
   document.getElementById('compact-midi-badge').textContent = 'CH ' + state[paramIdx('kParamMidiChannel')];
 
   randomizeAmbientPhase();
@@ -766,7 +823,14 @@ function OnMessage(msgTag, dataSize, data) {
       checkParamRegistrySync(json.params);
     } catch (e) { /* ignore */ }
   } else if (msgTag === 101) {
-    onExportResult(true);
+    // data is the raw exported file's absolute path (not base64-JSON like
+    // msgTag -1/103 -- see MidiGenerator.cpp's OnMessage, which sends the
+    // WDL_String's raw bytes directly). SendArbitraryMsgFromDelegate always
+    // base64-encodes the payload regardless of what it semantically is, so
+    // this still needs the same atob() decode.
+    let filePath = null;
+    try { filePath = window.atob(data); } catch (e) { /* ignore */ }
+    onExportResult(true, filePath);
   } else if (msgTag === 102) {
     onExportResult(false);
   } else if (msgTag === 103) {

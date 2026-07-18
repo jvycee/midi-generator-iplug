@@ -21,7 +21,11 @@
           <p class="brand-subtitle">Ambient Generative System</p>
         </div>
       </div>
-      <button class="mode-link" id="btn-goto-compact">Compact &#9656;</button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="switch" data-param="kParamFreeze" data-on-label="Frozen" data-off-label="Live" title="Stops triggering new hits -- whatever's currently ringing keeps playing out."></div>
+        <button class="mode-link" id="btn-reroll" title="Reseed the generative wander (RNG, Chaos state, harmony position) to a fresh starting point.">Reroll</button>
+        <button class="mode-link" id="btn-goto-compact">Compact &#9656;</button>
+      </div>
     </div>
 
     <div class="card hero-card">
@@ -35,6 +39,9 @@
       <div class="drift-labels">
         <p class="drift-label-title">Drift Amount</p>
         <p class="drift-label-value mono" data-readout="kParamHarmonyDrift">20%</p>
+      </div>
+      <div class="knob-grid" title="0 = pure random wander (default). Higher values pull the drift back toward the tonic instead of wandering freely.">
+        <div class="knob knob-sm" data-param="kParamDriftGravity" data-label="Gravity" data-unit="%"></div>
       </div>
     </div>
 
@@ -55,6 +62,8 @@
         <div class="knob knob-sm" data-param="kParamTrigOffset" data-label="Trig Offset"></div>
         <div class="knob knob-sm" data-param="kParamRotationDriftPeriod" data-label="Rotation Drift"></div>
         <div class="knob knob-sm" data-param="kParamRatchetCount" data-label="Ratchet"></div>
+        <div class="knob knob-sm" data-param="kParamAccentEvery" data-label="Accent Every"></div>
+        <div class="knob knob-sm" data-param="kParamAccentAmount" data-label="Accent" data-unit="%"></div>
       </div>
 
       <div class="pill-selector" data-param="kParamSequenceMode" data-options="Euclidean,Density,Chaos"></div>
@@ -95,7 +104,7 @@
           <p class="field-label">Scale</p>
           <select class="dropdown" data-param="kParamScaleMode"></select>
         </div>
-        <div class="dropdown-field-wrap" style="width:64px">
+        <div class="dropdown-field-wrap" style="width:64px" title="Root sets the chord's register/anchor note -- it's independent of Key, so a Root outside the current Key will still get pulled into it (unless Chord Priority is on).">
           <p class="field-label">Root</p>
           <select class="dropdown" data-param="kParamRootNote"></select>
         </div>
@@ -104,7 +113,12 @@
       <div class="knob-grid knob-grid-3">
         <div class="knob knob-sm" data-param="kParamChordType" data-label="Chord Type"></div>
         <div class="knob knob-sm" data-param="kParamVoicing" data-label="Voicing"></div>
-        <div class="knob knob-sm" data-param="kParamChordVoices" data-label="Voices"></div>
+        <div class="knob knob-sm" data-param="kParamChordVoices" data-label="Voices" title="On chord types with fewer intervals than Voices asks for, extra voices are octave doublings of the existing tones, not new 9th/11th/13th extensions -- pick an already-extended Chord Type (Maj9, Dom9, Min11, ...) for real added tensions."></div>
+      </div>
+
+      <div class="toggle-row" title="Scale: every chord tone is snapped into the current key, which can change the chord's quality. Chord: the chord keeps its exact notes, even if that steps outside the key.">
+        <p class="toggle-label">Chord Priority</p>
+        <div class="switch" data-param="kParamChordPriority" data-on-label="Chord" data-off-label="Scale"></div>
       </div>
 
       <div class="sliders-group">
@@ -224,6 +238,14 @@
             <button class="bars-btn" id="bars-dec">&#8722;</button>
             <span class="bars-pill mono" id="bars-readout">4 BARS</span>
             <button class="bars-btn" id="bars-inc">&#43;</button>
+          </div>
+        </div>
+        <div class="bars-selector">
+          <p class="export-label" title="Renders this many independently-reseeded takes in one export, each a numbered file in the same folder.">Variations:</p>
+          <div class="bars-stepper">
+            <button class="bars-btn" id="variations-dec">&#8722;</button>
+            <span class="bars-pill mono" id="variations-readout">1</span>
+            <button class="bars-btn" id="variations-inc">&#43;</button>
           </div>
         </div>
       </div>

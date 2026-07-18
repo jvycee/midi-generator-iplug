@@ -20,7 +20,7 @@
 #define PLUG_TYPE 2
 #define PLUG_DOES_MIDI_IN 1
 #define PLUG_DOES_MIDI_OUT 1
-#define PLUG_DOES_MPE 1
+#define PLUG_DOES_MPE 0 // no per-note MPE data is ever sent -- everything goes out on the single MIDI Channel param
 #define PLUG_DOES_STATE_CHUNKS 0
 #define PLUG_HAS_UI 1
 #define PLUG_WIDTH 1024
@@ -44,8 +44,11 @@
 #define VST3_SUBCATEGORY "Instrument|Synth"
 #define CLAP_MANUAL_URL "https://iplug2.github.io/manuals/example_manual.pdf"
 #define CLAP_SUPPORT_URL "https://github.com/iPlug2/iPlug2/wiki"
-#define CLAP_DESCRIPTION "iPlug2 instrument example"
-#define CLAP_FEATURES "instrument"//, "synth"
+#define CLAP_DESCRIPTION "Generative Euclidean/probability MIDI sequencer"
+// CLAP_FEATURES intentionally not overridden: IPlug_include_in_plug_src.h
+// auto-selects CLAP_PLUGIN_FEATURE_NOTE_EFFECT for PLUG_TYPE==2 (MIDI
+// Effect), which is the correct tag -- hand-typing strings here would
+// silently shadow that framework default with an unverified guess.
 
 #define APP_NUM_CHANNELS 2
 #define APP_N_VECTOR_WAIT 0

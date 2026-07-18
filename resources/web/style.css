@@ -1,19 +1,46 @@
 :root {
-  --bg: #1e1c1a;
-  --card-bg: #2a2725;
-  --card-border: #383230;
-  --input-bg: #151312;
-  --input-border: #2d2826;
-  --text-primary: #e8e4df;
-  --text-secondary: #9c948f;
-  --text-tertiary: #6b625e;
-  --accent-coral: #c4796a;
-  --accent-sage: #7a9b82;
-  --accent-lavender: #8e82a6;
-  --export-bg: #2e2422;
-  --export-border: #3f2d2a;
+  /* Design system adapted from the provided Figma kit
+     (figma.com/design/lR0L7uMHuIDyXs6sVI1vto, node 13:295): a dark
+     "terminal/generative-art" palette with one accent hue (Electric Blue),
+     differentiated by brightness/opacity rather than separate hues -- that's
+     a deliberate property of the source system, not a simplification of it.
+     The three --accent-* variable names are kept from the previous palette
+     (index.html references them via .accent-coral/.accent-sage/
+     .accent-lavender utility classes) so this reskin stays entirely inside
+     this file -- no HTML/JS changes needed. */
+  --bg: #07090e;              /* Base Void */
+  --card-bg: #0d1117;         /* Panel Gray */
+  --card-border: #30363d;     /* Iron Border */
+  --input-bg: #161b22;        /* Elem Gray -- intentionally lighter than --card-bg, per the source kit */
+  --input-border: #30363d;    /* Iron Border */
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --text-tertiary: #6e7681;   /* the source kit only specs a 2-tier text scale; this is a dimmer step in the same GitHub-Dark-derived family the rest of the palette draws from */
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --accent-coral: #3d8bff;    /* Electric Blue -- kept the old variable name so index.html needs no changes */
+  --accent-sage: #3d8bff;
+  --accent-lavender: #3d8bff;
+  --accent-glow: rgba(61, 139, 255, 0.5);         /* strong glow -- e.g. the source kit's "ACTIVE DOT" */
+  --accent-glow-soft: rgba(61, 139, 255, 0.24);   /* input focus glow, per the source kit's "INPUT FOCUS GLOW STATE" */
+  --accent-wash: rgba(61, 139, 255, 0.07);        /* mini-pill/badge background wash, per the source kit */
+  --accent-wash-strong: rgba(61, 139, 255, 0.11); /* the source kit's "Blue Glow" swatch value */
+
+  /* Not in the source kit (it only specs the one accent hue) -- export
+     success/failure need to read as distinct at a glance from the default
+     blue "click to export" state, so these extend the palette with the two
+     conventional status hues, kept in the same GitHub-Dark-derived token
+     family as everything else here. */
+  --success: #3fb950;
+  --danger: #f85149;
+
+  --export-bg: var(--card-bg);
+  --export-border: var(--card-border);
+
+  /* The source kit uses one family (Geist Mono) for every piece of text.
+     No web font is bundled in this offline WebView, so --font-sans is
+     pointed at the same system monospace stack as --font-mono rather than
+     loading a new asset -- visually close, zero new asset/build wiring. */
+  --font-sans: var(--font-mono);
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Master breathing-loop lengths. Defaults match a 120bpm assumption; JS
@@ -66,10 +93,13 @@ html, body {
 
 .brand-group { display: flex; gap: 8px; align-items: center; }
 
+/* Status/active-dot treatment matches the source kit's "ACTIVE DOT" spec
+   exactly: solid accent fill plus a soft glow, not just a flat dot. */
 .pulse-indicator, .pulse-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--accent-coral);
+  box-shadow: 0 0 4px var(--accent-glow);
   animation: breathe-opacity var(--full-cycle) cubic-bezier(0.25,0,0.75,1) infinite;
 }
 .pulse-dot { width: 6px; height: 6px; animation: pulse-dot-anim var(--compact-cycle) cubic-bezier(0.25,0,0.75,1) infinite; }
@@ -101,7 +131,7 @@ html, body {
   border-radius: 6px;
   cursor: pointer;
 }
-.mode-link:hover { color: var(--text-primary); border-color: var(--accent-coral); }
+.mode-link:hover { color: var(--text-primary); border-color: var(--accent-coral); box-shadow: 0 0 6px var(--accent-wash-strong); }
 
 /* --- drift panel (labels only now -- the knob itself is the shared
    .hero-card / .knob-canvas treatment defined further down, alongside
@@ -128,7 +158,7 @@ html, body {
 
 .card-title-row { display: flex; align-items: center; gap: 6px; }
 .card-icon { font-size: 12px; line-height: 1; }
-.card-title { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.card-title { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
 .accent-coral { color: var(--accent-coral); }
 .accent-sage { color: var(--accent-sage); }
 .accent-lavender { color: var(--accent-lavender); }
@@ -140,6 +170,7 @@ html, body {
 .knob:focus, .slider:focus, .vslider:focus, .switch:focus, .pill-selector:focus, select:focus, input:focus {
   outline: 2px solid var(--accent-coral);
   outline-offset: 2px;
+  box-shadow: 0 0 6px var(--accent-glow-soft);
 }
 
 .knob {
@@ -196,7 +227,10 @@ html, body {
   border-radius: 6px;
   cursor: pointer;
 }
-.pill-option.active { background: var(--accent-coral); color: #1e1c1a; }
+/* Solid-fill selected state -- matches the source kit's "PRIMARY PHOSPHOR
+   BUTTON" pattern (dark text on solid accent), not the translucent
+   mini-pill pattern used for badges below. */
+.pill-option.active { background: var(--accent-coral); color: var(--bg); }
 
 /* --- toggle row / switch --- */
 
@@ -220,7 +254,7 @@ html, body {
   background: var(--text-secondary);
   transition: left 0.15s, background 0.15s;
 }
-.switch.on { background: rgba(122, 155, 130, 0.25); border-color: var(--accent-sage); }
+.switch.on { background: rgba(61, 139, 255, 0.18); border-color: var(--accent-sage); }
 .switch.on::after { left: 18px; background: var(--accent-sage); }
 
 .sub-slider-row { width: 100%; }
@@ -244,7 +278,7 @@ html, body {
   border-radius: 6px;
   width: 100%;
   cursor: pointer;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5L5 6.5L8 3.5' stroke='%239c948f' stroke-width='1.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5L5 6.5L8 3.5' stroke='%238b949e' stroke-width='1.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat;
   background-position: right 8px center;
   padding-right: 24px;
@@ -263,7 +297,7 @@ html, body {
   position: relative;
   height: 6px;
   border-radius: 3px;
-  background: #3a3532;
+  background: var(--card-border);
   cursor: pointer;
 }
 .slider::before {
@@ -299,6 +333,8 @@ html, body {
   padding: 6px 8px;
   width: 64px;
 }
+/* Matches the source kit's "MONO DATA" spec exactly: mono, small, colored
+   accent -- e.g. their "FREQ: 440.00Hz [A4]" example. */
 .cc-prefix { font-size: 10px; color: var(--accent-lavender); font-family: var(--font-mono); }
 .cc-field {
   width: 100%;
@@ -329,11 +365,15 @@ html, body {
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+/* Translucent mini-pill treatment -- matches the source kit's badge pattern
+   (e.g. "MIDI ENGINE ACTIVE", "DIV: 1/16"): accent text on a soft accent
+   wash with a thin accent border, not a solid fill. */
 .bars-pill {
-  background: #1c1513;
+  background: var(--accent-wash);
+  border: 0.5px solid var(--accent-coral);
   color: var(--accent-coral);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -341,16 +381,16 @@ html, body {
 .drag-midi-btn {
   width: 100%;
   background: var(--accent-coral);
-  color: #1e1c1a;
+  color: var(--bg);
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 12px;
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 700;
   display: flex; align-items: center; justify-content: center; gap: 8px;
   cursor: grab;
-  box-shadow: 0 2px 3px rgba(196, 121, 106, 0.25);
+  box-shadow: 0 2px 3px var(--accent-wash-strong);
   transition: background-color 150ms ease, box-shadow 150ms ease;
 }
 .drag-midi-btn:active { cursor: grabbing; }
@@ -358,16 +398,19 @@ html, body {
 
 /* Momentary feedback once C++ confirms the .mid actually finished rendering
    (MidiGenerator::OnMessage msgTag 101/102) -- the click alone doesn't mean
-   the file exists yet, so this is driven by that ack, not the click. */
-.drag-midi-btn.export-ready { background: var(--accent-sage); box-shadow: 0 2px 3px rgba(122, 155, 130, 0.3); }
+   the file exists yet, so this is driven by that ack, not the click.
+   --success/--danger aren't in the source kit (see the :root comment) --
+   ready/failed need to read as distinct from the default blue action state
+   at a glance. */
+.drag-midi-btn.export-ready { background: var(--success); box-shadow: 0 2px 3px rgba(63, 185, 80, 0.3); }
 .drag-midi-btn.export-ready .drag-label::after { content: ' \2014 Ready!'; }
-.drag-midi-btn.export-failed { background: #a3564f; box-shadow: 0 2px 3px rgba(163, 86, 79, 0.3); }
+.drag-midi-btn.export-failed { background: var(--danger); box-shadow: 0 2px 3px rgba(248, 81, 73, 0.3); }
 .drag-midi-btn.export-failed .drag-label::after { content: ' \2014 Failed'; }
 
 .footer-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 4px; }
 .footer-text { margin: 0; font-size: 9px; color: var(--text-tertiary); }
 .connection { display: flex; align-items: center; gap: 4px; }
-.green-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-sage); animation: breathe-opacity var(--full-cycle) ease-in-out infinite; }
+.green-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-sage); box-shadow: 0 0 4px var(--accent-glow); animation: breathe-opacity var(--full-cycle) ease-in-out infinite; }
 
 /* ==================== COMPACT VIEW ==================== */
 
@@ -389,7 +432,7 @@ html, body {
 
 .hero-card, .density-card {
   background: var(--card-bg);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -482,7 +525,7 @@ html, body {
   filter: drop-shadow(0 0 0px transparent);
 }
 .ambient-ring-outer.ring-glow, .ambient-ring-mid.ring-glow, .ambient-ring-inner.ring-glow {
-  filter: drop-shadow(0 0 9px rgba(196, 121, 106, 0.55));
+  filter: drop-shadow(0 0 9px var(--accent-glow));
 }
 
 /* Class-based (not ID) so it applies to any hero knob, not just Compact's --
@@ -533,7 +576,7 @@ html, body {
   position: relative;
   width: 4px; height: 140px;
   border-radius: 2px;
-  background: #332f2d;
+  background: var(--card-border);
   flex-shrink: 0;
   cursor: ns-resize;
 }
@@ -576,7 +619,17 @@ html, body {
 .density-hint { margin: 0; font-size: 11px; color: var(--accent-sage); }
 
 .bottom-strip { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-top: 4px; }
-.midi-badge { background: var(--card-bg); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 4px; }
+/* Mini-pill treatment, matching .bars-pill above and the source kit's
+   badge pattern. */
+.midi-badge {
+  background: var(--accent-wash);
+  border: 0.5px solid var(--accent-coral);
+  color: var(--accent-coral);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
 .export-handle {
   background: var(--card-bg);
   border: none;
@@ -587,10 +640,10 @@ html, body {
   transition: background-color 150ms ease;
 }
 .drag-icon-sm { font-size: 11px; color: var(--text-secondary); }
-.export-handle.export-ready { background: var(--accent-sage); }
-.export-handle.export-ready .drag-icon-sm { color: #1e1c1a; }
-.export-handle.export-failed { background: #a3564f; }
-.export-handle.export-failed .drag-icon-sm { color: #1e1c1a; }
+.export-handle.export-ready { background: var(--success); }
+.export-handle.export-ready .drag-icon-sm { color: var(--bg); }
+.export-handle.export-failed { background: var(--danger); }
+.export-handle.export-failed .drag-icon-sm { color: var(--bg); }
 .grip-line {
   width: 2px; height: 8px;
   background: var(--text-secondary);
