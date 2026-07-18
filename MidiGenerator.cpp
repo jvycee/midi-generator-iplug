@@ -4,6 +4,35 @@
 #include <cstdlib>
 #include <cstdio>
 
+namespace
+{
+    // Single source of truth for the 8 mod slots' param IDs and defaults --
+    // shared by the constructor (initial InitEnum/InitInt + track sync) and
+    // OnParamChange (live updates), so adding a 9th slot means touching one
+    // table instead of two hand-written call sites.
+    struct ModSlotParamIds { int srcParam; int ccParam; };
+
+    constexpr ModSlotParamIds kModSlotParams[8] = {
+        { kParamMod1Source, kParamMod1CC }, { kParamMod2Source, kParamMod2CC },
+        { kParamMod3Source, kParamMod3CC }, { kParamMod4Source, kParamMod4CC },
+        { kParamMod5Source, kParamMod5CC }, { kParamMod6Source, kParamMod6CC },
+        { kParamMod7Source, kParamMod7CC }, { kParamMod8Source, kParamMod8CC },
+    };
+
+    // Mod1/2 default to something musically useful out of the box; Mod3-8
+    // default Off since modular patching is deliberate -- see the header
+    // comment on modSlots for why we don't guess traffic the user didn't ask for.
+    constexpr int kModSlotDefaultSource[8] = {
+        (int)ModSource::Velocity, (int)ModSource::HarmonyDrift,
+        (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off,
+        (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off,
+    };
+    // CC1 = mod wheel, CC74 = filter cutoff by convention; the rest
+    // (Expression, Volume, Pan, Resonance/Timbre, Reverb, Chorus) are just
+    // sensible starting points a modular patch is free to reassign.
+    constexpr int kModSlotDefaultCC[8] = { 1, 74, 11, 7, 10, 71, 91, 93 };
+}
+
 MidiGenerator::MidiGenerator(const InstanceInfo& info)
 : Plugin(info, MakeConfig(kNumParams, 0)) // 0 presets for now
 {
@@ -11,6 +40,11 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     GetParam(kParamSteps)->InitInt("Steps", 16, 1, 32);
     GetParam(kParamPulses)->InitInt("Pulses", 5, 1, 32);
     GetParam(kParamRotation)->InitInt("Rotation", 0, 0, 31);
+    GetParam(kParamPatternInvert)->InitBool("Pattern Invert", false);
+    GetParam(kParamTrigEvery)->InitInt("Trig Every", 1, 1, 8);
+    GetParam(kParamTrigOffset)->InitInt("Trig Offset", 0, 0, 7);
+    GetParam(kParamRotationDriftPeriod)->InitInt("Rotation Drift", 0, 0, 128);
+    GetParam(kParamRatchetCount)->InitInt("Ratchet", 1, 1, 8);
     GetParam(kParamSequenceMode)->InitEnum("Sequence Mode", (int)SequenceMode::Euclidean,
         { "Euclidean", "Density", "Chaos" });
     GetParam(kParamSequenceAmount)->InitPercentage("Density/Chaos", 50.);
@@ -37,37 +71,18 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     GetParam(kParamVelocity)->InitPercentage("Velocity", 60.); // softer default -- high velocity often also brightens/hardens the downstream synth's timbre
     GetParam(kParamMidiChannel)->InitInt("MIDI Channel", 1, 1, 16);
     GetParam(kParamGlobalTranspose)->InitInt("Transpose", 0, -24, 24);
-    GetParam(kParamMod1Source)->InitEnum("Mod1 Source", (int)ModSource::Velocity,
-        { "Off", "Velocity", "Gate", "Probability", "Dens/Chaos", "Drift", "Random" });
-    GetParam(kParamMod1CC)->InitInt("Mod1 CC#", 1, 0, 127);   // CC1 = mod wheel by convention, but any synth can remap it
-    GetParam(kParamMod2Source)->InitEnum("Mod2 Source", (int)ModSource::HarmonyDrift,
-        { "Off", "Velocity", "Gate", "Probability", "Dens/Chaos", "Drift", "Random" });
-    GetParam(kParamMod2CC)->InitInt("Mod2 CC#", 74, 0, 127);  // CC74 = filter cutoff by convention
     GetParam(kParamExportBars)->InitInt("Export Bars", 4, 1, 16);
     GetParam(kParamMonoMode)->InitBool("Mono", false);
     GetParam(kParamMaxVoices)->InitInt("Max Voices", 8, 1, 16); // global cap across overlapping hits, not per-chord
 
-    // Mod3-8: default Off. Unlike Mod1/2 these don't have an obviously
-    // "right" default source/CC -- modular patching is deliberate (you wire
-    // a specific output to a specific destination), so leave them inert
-    // until the user opts a slot in, rather than guessing traffic they
-    // didn't ask for.
-    static const char* kModSourceNames[] = { "Off", "Velocity", "Gate", "Probability", "Dens/Chaos", "Drift", "Random" };
-    static const int kMod38DefaultCC[6] = { 11, 7, 10, 71, 91, 93 }; // Expression, Volume, Pan, Resonance/Timbre, Reverb, Chorus
-    const int mod38Params[6][2] = {
-        { kParamMod3Source, kParamMod3CC }, { kParamMod4Source, kParamMod4CC },
-        { kParamMod5Source, kParamMod5CC }, { kParamMod6Source, kParamMod6CC },
-        { kParamMod7Source, kParamMod7CC }, { kParamMod8Source, kParamMod8CC },
-    };
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 8; ++i)
     {
         char nameBuf[16];
-        snprintf(nameBuf, sizeof(nameBuf), "Mod%d Source", i + 3);
-        GetParam(mod38Params[i][0])->InitEnum(nameBuf, (int)ModSource::Off,
-            { kModSourceNames[0], kModSourceNames[1], kModSourceNames[2], kModSourceNames[3],
-              kModSourceNames[4], kModSourceNames[5], kModSourceNames[6] });
-        snprintf(nameBuf, sizeof(nameBuf), "Mod%d CC#", i + 3);
-        GetParam(mod38Params[i][1])->InitInt(nameBuf, kMod38DefaultCC[i], 0, 127);
+        snprintf(nameBuf, sizeof(nameBuf), "Mod%d Source", i + 1);
+        GetParam(kModSlotParams[i].srcParam)->InitEnum(nameBuf, kModSlotDefaultSource[i],
+            { "Off", "Velocity", "Gate", "Probability", "Dens/Chaos", "Drift", "Random" });
+        snprintf(nameBuf, sizeof(nameBuf), "Mod%d CC#", i + 1);
+        GetParam(kModSlotParams[i].ccParam)->InitInt(nameBuf, kModSlotDefaultCC[i], 0, 127);
     }
 
     GetParam(kParamSendClock)->InitBool("Send Clock", false); // off by default -- opt in for modular/external sync
@@ -82,6 +97,11 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     track.steps = GetParam(kParamSteps)->Int();
     track.pulses = GetParam(kParamPulses)->Int();
     track.rotation = GetParam(kParamRotation)->Int();
+    track.patternInvert = GetParam(kParamPatternInvert)->Bool();
+    track.trigEvery = GetParam(kParamTrigEvery)->Int();
+    track.trigOffset = GetParam(kParamTrigOffset)->Int();
+    track.rotationDriftPeriod = GetParam(kParamRotationDriftPeriod)->Int();
+    track.ratchetCount = GetParam(kParamRatchetCount)->Int();
     track.rootNote = GetParam(kParamRootNote)->Int();
     track.voicing = static_cast<VoicingStyle>(GetParam(kParamVoicing)->Int());
     track.monoMode = GetParam(kParamMonoMode)->Bool();
@@ -103,14 +123,10 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
     globalParams.scaleMode = static_cast<ScaleMode>(GetParam(kParamScaleMode)->Int());
     globalParams.globalTranspose = GetParam(kParamGlobalTranspose)->Int();
 
-    modSlots[0].source = static_cast<ModSource>(GetParam(kParamMod1Source)->Int());
-    modSlots[0].ccNumber = GetParam(kParamMod1CC)->Int();
-    modSlots[1].source = static_cast<ModSource>(GetParam(kParamMod2Source)->Int());
-    modSlots[1].ccNumber = GetParam(kParamMod2CC)->Int();
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 8; ++i)
     {
-        modSlots[i + 2].source = static_cast<ModSource>(GetParam(mod38Params[i][0])->Int());
-        modSlots[i + 2].ccNumber = GetParam(mod38Params[i][1])->Int();
+        modSlots[i].source = static_cast<ModSource>(GetParam(kModSlotParams[i].srcParam)->Int());
+        modSlots[i].ccNumber = GetParam(kModSlotParams[i].ccParam)->Int();
     }
 
     rebuildTrackPattern(track);
@@ -128,6 +144,20 @@ MidiGenerator::MidiGenerator(const InstanceInfo& info)
 
 void MidiGenerator::OnParamChange(int paramIdx)
 {
+    for (int i = 0; i < 8; ++i)
+    {
+        if (paramIdx == kModSlotParams[i].srcParam)
+        {
+            modSlots[i].source = static_cast<ModSource>(GetParam(paramIdx)->Int());
+            return;
+        }
+        if (paramIdx == kModSlotParams[i].ccParam)
+        {
+            modSlots[i].ccNumber = GetParam(paramIdx)->Int();
+            return;
+        }
+    }
+
     switch (paramIdx)
     {
         case kParamPulses:
@@ -175,6 +205,22 @@ void MidiGenerator::OnParamChange(int paramIdx)
             track.rotation = GetParam(kParamRotation)->Int();
             rebuildTrackPattern(track);
             break;
+        case kParamPatternInvert:
+            track.patternInvert = GetParam(kParamPatternInvert)->Bool();
+            rebuildTrackPattern(track);
+            break;
+        case kParamTrigEvery:
+            track.trigEvery = GetParam(kParamTrigEvery)->Int();
+            break;
+        case kParamTrigOffset:
+            track.trigOffset = GetParam(kParamTrigOffset)->Int();
+            break;
+        case kParamRotationDriftPeriod:
+            track.rotationDriftPeriod = GetParam(kParamRotationDriftPeriod)->Int();
+            break;
+        case kParamRatchetCount:
+            track.ratchetCount = GetParam(kParamRatchetCount)->Int();
+            break;
         case kParamRootNote:
             track.rootNote = GetParam(kParamRootNote)->Int();
             break;
@@ -199,30 +245,6 @@ void MidiGenerator::OnParamChange(int paramIdx)
         case kParamGlobalTranspose:
             globalParams.globalTranspose = GetParam(kParamGlobalTranspose)->Int();
             break;
-        case kParamMod1Source:
-            modSlots[0].source = static_cast<ModSource>(GetParam(kParamMod1Source)->Int());
-            break;
-        case kParamMod1CC:
-            modSlots[0].ccNumber = GetParam(kParamMod1CC)->Int();
-            break;
-        case kParamMod2Source:
-            modSlots[1].source = static_cast<ModSource>(GetParam(kParamMod2Source)->Int());
-            break;
-        case kParamMod2CC:
-            modSlots[1].ccNumber = GetParam(kParamMod2CC)->Int();
-            break;
-        case kParamMod3Source: modSlots[2].source = static_cast<ModSource>(GetParam(kParamMod3Source)->Int()); break;
-        case kParamMod3CC:     modSlots[2].ccNumber = GetParam(kParamMod3CC)->Int(); break;
-        case kParamMod4Source: modSlots[3].source = static_cast<ModSource>(GetParam(kParamMod4Source)->Int()); break;
-        case kParamMod4CC:     modSlots[3].ccNumber = GetParam(kParamMod4CC)->Int(); break;
-        case kParamMod5Source: modSlots[4].source = static_cast<ModSource>(GetParam(kParamMod5Source)->Int()); break;
-        case kParamMod5CC:     modSlots[4].ccNumber = GetParam(kParamMod5CC)->Int(); break;
-        case kParamMod6Source: modSlots[5].source = static_cast<ModSource>(GetParam(kParamMod6Source)->Int()); break;
-        case kParamMod6CC:     modSlots[5].ccNumber = GetParam(kParamMod6CC)->Int(); break;
-        case kParamMod7Source: modSlots[6].source = static_cast<ModSource>(GetParam(kParamMod7Source)->Int()); break;
-        case kParamMod7CC:     modSlots[6].ccNumber = GetParam(kParamMod7CC)->Int(); break;
-        case kParamMod8Source: modSlots[7].source = static_cast<ModSource>(GetParam(kParamMod8Source)->Int()); break;
-        case kParamMod8CC:     modSlots[7].ccNumber = GetParam(kParamMod8CC)->Int(); break;
         default:
             break;
     }
@@ -230,29 +252,47 @@ void MidiGenerator::OnParamChange(int paramIdx)
 
 bool MidiGenerator::OnMessage(int msgTag, int ctrlTag, int dataSize, const void* pData)
 {
-    if (msgTag == 100) // MIDI export request (SAMFUI(100) from app.js's requestExport())
+    if (msgTag == kMsgTagExportRequest) // from app.js's requestExport()
     {
         WDL_String path = ExportPatternAsMidiFile();
         if (path.GetLength() > 0)
         {
+#ifdef OS_MAC
             // NO_IGRAPHICS means there's no IGraphics::InitiateExternalFileDragDrop()
             // to hand this off as a native OS drag session (that API lives on
             // IGraphics, which doesn't exist in a WebView-only build). Reveal
             // it in Finder instead so the export is still one click away from
-            // being dragged into the DAW by hand.
+            // being dragged into the DAW by hand. Mac-only: there's no Finder
+            // (or `open`) to shell out to on iOS.
             WDL_String cmd;
             cmd.SetFormatted(1200, "open -R \"%s\"", path.Get());
             system(cmd.Get());
-            SendArbitraryMsgFromDelegate(101 /* export succeeded */);
+#endif
+            // WebViewEditorDelegate's override of this hides IEditorDelegate's
+            // default arguments (defaults aren't inherited across an
+            // override) -- dataSize/pData must be passed explicitly here.
+            SendArbitraryMsgFromDelegate(kMsgTagExportSucceeded, 0, nullptr);
         }
         else
         {
-            SendArbitraryMsgFromDelegate(102 /* export failed */);
+            SendArbitraryMsgFromDelegate(kMsgTagExportFailed, 0, nullptr);
         }
         return true;
     }
 
     return false;
+}
+
+void MidiGenerator::OnIdle()
+{
+    double bpm = GetTempo();
+    if (std::abs(bpm - lastSentTempo) > 0.001)
+    {
+        lastSentTempo = bpm;
+        WDL_String bpmStr;
+        bpmStr.SetFormatted(32, "%.3f", bpm);
+        SendArbitraryMsgFromDelegate(kMsgTagTempoUpdate, bpmStr.GetLength(), bpmStr.Get());
+    }
 }
 
 void MidiGenerator::OnReset()
@@ -265,33 +305,70 @@ void MidiGenerator::OnReset()
     wasTransportRunning = false;
 }
 
+void MidiGenerator::SendModCCs()
+{
+    for (const ModSlot& slot : modSlots)
+    {
+        if (slot.source == ModSource::Off) continue;
+        float value = evaluateModSource(track, slot.source);
+        IMidiMsg ccMsg;
+        ccMsg.MakeControlChangeMsg(static_cast<IMidiMsg::EControlChangeMsg>(slot.ccNumber), value, track.midiChannel - 1);
+        SendMidiMsg(ccMsg);
+    }
+}
+
+void MidiGenerator::KillExistingNote(int noteNumber, int channel)
+{
+    for (int i = 0; i < activeNotes.count; ++i)
+    {
+        if (activeNotes.items[i].noteNumber == noteNumber && activeNotes.items[i].channel == channel)
+        {
+            IMidiMsg off;
+            off.MakeNoteOffMsg(noteNumber, 0, channel - 1);
+            SendMidiMsg(off);
+            activeNotes.removeAt(i);
+            break; // (pitch, channel) is unique among active notes by construction
+        }
+    }
+    for (int i = 0; i < pendingNotes.count; ++i)
+    {
+        if (pendingNotes.items[i].noteNumber == noteNumber && pendingNotes.items[i].channel == channel)
+        {
+            pendingNotes.removeAt(i); // never got a note-on, just drop it
+            break;
+        }
+    }
+}
+
 void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
-    for (auto it = pendingNotes.begin(); it != pendingNotes.end(); )
+    for (int i = 0; i < pendingNotes.count; )
     {
-        it->samplesUntilOn -= nFrames;
-        if (it->samplesUntilOn <= 0)
+        PendingNote& p = pendingNotes.items[i];
+        p.samplesUntilOn -= nFrames;
+        if (p.samplesUntilOn <= 0)
         {
             IMidiMsg msg;
-            msg.MakeNoteOnMsg(it->noteNumber, it->velocity, 0, it->channel - 1);
+            msg.MakeNoteOnMsg(p.noteNumber, p.velocity, 0, p.channel - 1);
             SendMidiMsg(msg);
-            activeNotes.push_back({it->noteNumber, it->channel, it->gateSamples});
-            it = pendingNotes.erase(it);
+            activeNotes.push({ p.noteNumber, p.channel, p.gateSamples });
+            pendingNotes.removeAt(i);
         }
-        else ++it;
+        else ++i;
     }
 
-    for (auto it = activeNotes.begin(); it != activeNotes.end(); )
+    for (int i = 0; i < activeNotes.count; )
     {
-        it->samplesRemaining -= nFrames;
-        if (it->samplesRemaining <= 0)
+        ActiveNote& a = activeNotes.items[i];
+        a.samplesRemaining -= nFrames;
+        if (a.samplesRemaining <= 0)
         {
             IMidiMsg msg;
-            msg.MakeNoteOffMsg(it->noteNumber, 0, it->channel - 1);
+            msg.MakeNoteOffMsg(a.noteNumber, 0, a.channel - 1);
             SendMidiMsg(msg);
-            it = activeNotes.erase(it);
+            activeNotes.removeAt(i);
         }
-        else ++it;
+        else ++i;
     }
 
     bool transportRunning = GetTransportIsRunning();
@@ -321,14 +398,7 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     while (ccUpdateSamplesRemaining <= 0)
     {
         ccUpdateSamplesRemaining += ccIntervalSamples;
-        for (const ModSlot& slot : modSlots)
-        {
-            if (slot.source == ModSource::Off) continue;
-            float value = evaluateModSource(track, slot.source);
-            IMidiMsg ccMsg;
-            ccMsg.MakeControlChangeMsg(static_cast<IMidiMsg::EControlChangeMsg>(slot.ccNumber), value, track.midiChannel - 1);
-            SendMidiMsg(ccMsg);
-        }
+        SendModCCs();
     }
 
     // 24ppqn MIDI clock, for external gear (e.g. a Eurorack clock/CV
@@ -352,17 +422,19 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     {
         last16thNote = current16thNote;
         int stepIndex = current16thNote % track.steps;
-        if (evaluateStepTrigger(track, stepIndex))
+        int loopIndex = current16thNote / track.steps;
+        int rotationDriftSteps = track.rotationDriftPeriod > 0 ? (current16thNote / track.rotationDriftPeriod) : 0;
+        if (evaluateTrigCondition(track, loopIndex) && evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
         {
             applyHarmonyDrift(track);
             int scaleRoot = scaleDegreeToNote(globalParams.key, globalParams.scaleMode, track.scaleDegree, track.rootNote);
-            auto notes = buildTrackNotes(track, scaleRoot, globalParams.key, globalParams.scaleMode);
+            NoteSet notes = buildTrackNotes(track, scaleRoot, globalParams.key, globalParams.scaleMode);
 
             if (globalParams.globalTranspose != 0)
             {
                 for (int& n : notes) n = foldIntoMidiRange(n + globalParams.globalTranspose);
                 std::sort(notes.begin(), notes.end());
-                notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
+                notes.count = (int)(std::unique(notes.begin(), notes.end()) - notes.begin());
             }
 
             // Global polyphony cap. Voices (chordNotes) already limits a single
@@ -374,21 +446,21 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
             // than just dropping the new hit, so the sequence still feels
             // continuous instead of periodically going silent.
             int maxVoices = std::max(1, GetParam(kParamMaxVoices)->Int());
-            if ((int)notes.size() > maxVoices)
-                notes.resize(maxVoices);
+            if (notes.count > maxVoices)
+                notes.count = maxVoices;
 
-            int totalVoices = (int)activeNotes.size() + (int)pendingNotes.size();
-            while (totalVoices + (int)notes.size() > maxVoices && !activeNotes.empty())
+            int totalVoices = activeNotes.count + pendingNotes.count;
+            while (totalVoices + notes.count > maxVoices && !activeNotes.empty())
             {
                 IMidiMsg offMsg;
                 offMsg.MakeNoteOffMsg(activeNotes.front().noteNumber, 0, activeNotes.front().channel - 1);
                 SendMidiMsg(offMsg);
-                activeNotes.erase(activeNotes.begin());
+                activeNotes.removeAt(0);
                 --totalVoices;
             }
-            while (totalVoices + (int)notes.size() > maxVoices && !pendingNotes.empty())
+            while (totalVoices + notes.count > maxVoices && !pendingNotes.empty())
             {
-                pendingNotes.erase(pendingNotes.begin()); // never got a note-on, just drop it
+                pendingNotes.removeAt(0); // never got a note-on, just drop it
                 --totalVoices;
             }
 
@@ -405,27 +477,56 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
             int velocity = std::max(1, static_cast<int>(humanizedVelocity * 127.0f));
             int timingOffset = computeTimingOffsetSamples(track, current16thNote, globalParams, sixteenthNoteSamples);
 
-            for (const ModSlot& slot : modSlots)
-            {
-                if (slot.source == ModSource::Off) continue;
-                float value = evaluateModSource(track, slot.source);
-                IMidiMsg ccMsg;
-                ccMsg.MakeControlChangeMsg(static_cast<IMidiMsg::EControlChangeMsg>(slot.ccNumber), value, track.midiChannel - 1);
-                SendMidiMsg(ccMsg);
-            }
+            // Ratchet: only for hits that resolve to a single note -- see
+            // EuclideanTrack::ratchetCount. Confined to this one step's
+            // duration, overriding noteLengthSteps/gate for this hit only.
+            int ratchetCount = std::clamp(track.ratchetCount, 1, 8);
+            bool applyRatchet = ratchetCount > 1 && notes.count == 1;
+            int ratchetSliceSamples = std::max(1, sixteenthNoteSamples / ratchetCount);
+            int ratchetGateSamples = std::max(1, (int)(ratchetSliceSamples * track.gate));
+
+            SendModCCs();
 
             for (int note : notes)
             {
-                if (timingOffset <= 0)
+                // Guard against a stuck note if this pitch is still sounding
+                // (or queued) from an earlier hit -- see KillExistingNote's comment.
+                // Called once here, before scheduling this hit's note(s)/ratchet
+                // burst -- NOT between individual ratchet retriggers below, which
+                // are deliberately sequential and must not cancel each other.
+                KillExistingNote(note, track.midiChannel);
+
+                if (!applyRatchet)
                 {
-                    IMidiMsg msg;
-                    msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
-                    SendMidiMsg(msg);
-                    activeNotes.push_back({note, track.midiChannel, gateSamples});
+                    if (timingOffset <= 0)
+                    {
+                        IMidiMsg msg;
+                        msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
+                        SendMidiMsg(msg);
+                        activeNotes.push({ note, track.midiChannel, gateSamples });
+                    }
+                    else
+                    {
+                        pendingNotes.push({ note, track.midiChannel, velocity, timingOffset, gateSamples });
+                    }
                 }
                 else
                 {
-                    pendingNotes.push_back({note, track.midiChannel, velocity, timingOffset, gateSamples});
+                    for (int r = 0; r < ratchetCount; ++r)
+                    {
+                        int onset = timingOffset + r * ratchetSliceSamples;
+                        if (r == 0 && onset <= 0)
+                        {
+                            IMidiMsg msg;
+                            msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
+                            SendMidiMsg(msg);
+                            activeNotes.push({ note, track.midiChannel, ratchetGateSamples });
+                        }
+                        else
+                        {
+                            pendingNotes.push({ note, track.midiChannel, velocity, onset, ratchetGateSamples });
+                        }
+                    }
                 }
             }
         }

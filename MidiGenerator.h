@@ -52,7 +52,43 @@ enum EParams
   kParamMod8CC,
   kParamSendClock,         // send standard 24ppqn MIDI clock (+ Start/Stop) alongside notes/CC, for external gear to sync to
   kParamUIViewMode,        // Full/Compact WebView layout choice -- UI state only, never read by ProcessBlock. Meta + non-automatable (see constructor); rides normal host state save/recall so the choice survives plugin reopen.
+  kParamPatternInvert,     // flips active/inactive Euclidean steps -- appended last so no existing param index shifts
+  kParamTrigEvery,         // track only plays once every N loops through the pattern (see evaluateTrigCondition)
+  kParamTrigOffset,        // which of every kParamTrigEvery loops it plays on
+  kParamRotationDriftPeriod, // 16th-notes between each +1 auto-advance of the live rotation offset; 0 = off
+  kParamRatchetCount,      // retriggers per step for single-note hits; 1 = off
   kNumParams
+};
+
+// WebView UI protocol (see resources/web/app.js). Wire values only -- the two
+// sides agree on these numbers, not on a shared header.
+constexpr int kMsgTagExportRequest   = 100;
+constexpr int kMsgTagExportSucceeded = 101;
+constexpr int kMsgTagExportFailed    = 102;
+constexpr int kMsgTagTempoUpdate     = 103; // C++ -> JS: live host tempo, see OnIdle()
+
+// Fixed-capacity, allocation-free stand-in for std::vector, sized for the
+// note lists below. push()/removeAt() never touch the heap, which is what
+// actually matters on the audio thread -- ProcessBlock adds and removes from
+// these every block.
+template <typename T, int N>
+struct FixedList
+{
+    T items[N];
+    int count = 0;
+
+    bool push(const T& v) { if (count >= N) return false; items[count++] = v; return true; }
+    void removeAt(int i)  { for (int j = i; j < count - 1; ++j) items[j] = items[j + 1]; --count; }
+    void clear()          { count = 0; }
+    bool empty() const    { return count == 0; }
+
+    T&       front()       { return items[0]; }
+    const T& front() const { return items[0]; }
+
+    T*       begin()       { return items; }
+    T*       end()         { return items + count; }
+    const T* begin() const { return items; }
+    const T* end()   const { return items + count; }
 };
 
 class MidiGenerator final : public Plugin
@@ -70,6 +106,12 @@ public:
 
     // This replaces JUCE's processBlock
     void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
+
+    // UI-thread periodic tick (framework-driven, not audio-rate). Used only
+    // to push live tempo to the WebView UI -- see MidiGenerator.cpp. The
+    // ambient breathing animation's cycle length is tempo-relative, so
+    // without this it's stuck at app.js's hardcoded 120bpm fallback.
+    void OnIdle() override;
 
     // Renders the current pattern (kParamExportBars bars, current tempo) to
     // a temp .mid file and returns its path (empty on failure). Called from
@@ -93,6 +135,11 @@ private:
     // or patched to whichever slot number.
     ModSlot modSlots[8];
     int ccUpdateSamplesRemaining = 0;
+    void SendModCCs(); // shared by the ticker and on-hit paths in ProcessBlock
+
+    // Last tempo value pushed to the UI, so OnIdle only sends on an actual
+    // change rather than flooding the WebView message queue every tick.
+    double lastSentTempo = -1.0;
 
     // Optional 24ppqn MIDI clock output for external gear (e.g. a Eurorack
     // clock/CV module) to sync to. wasTransportRunning tracks the
@@ -103,13 +150,17 @@ private:
     // Playback tracking
     int last16thNote = -1;
 
-    // Keep track of active notes for Note Offs
+    // Keep track of active notes for Note Offs. kMaxVoiceSlots is double
+    // kParamMaxVoices's ceiling of 16, so the polyphony cap below always
+    // leaves headroom and push() never has to silently drop a note.
+    static constexpr int kMaxVoiceSlots = 32;
+
     struct ActiveNote {
         int noteNumber;
         int channel;
         int samplesRemaining;
     };
-    std::vector<ActiveNote> activeNotes;
+    FixedList<ActiveNote, kMaxVoiceSlots> activeNotes;
 
     // Notes waiting on a swing/soft-clock delay before their note-on fires.
     struct PendingNote {
@@ -119,5 +170,12 @@ private:
         int samplesUntilOn;
         int gateSamples;
     };
-    std::vector<PendingNote> pendingNotes;
+    FixedList<PendingNote, kMaxVoiceSlots> pendingNotes;
+
+    // If `noteNumber` on `channel` is already sounding or queued, kill it
+    // (sending a real note-off for an active one) before a new instance of
+    // the same pitch goes out. Two live note-ons for the same (pitch,
+    // channel) -- which harmony drift or a voicing change can produce -- is
+    // a stuck-note hazard on hosts/synths that don't expect it.
+    void KillExistingNote(int noteNumber, int channel);
 };

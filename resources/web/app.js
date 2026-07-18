@@ -47,6 +47,11 @@ const PARAMS = [
   /* 39 */ { name: 'kParamMod8CC',          type: 'int',     min: 0, max: 127, def: 93 },
   /* 40 */ { name: 'kParamSendClock',       type: 'bool',    def: 0 },
   /* 41 */ { name: 'kParamUIViewMode',      type: 'bool',    def: 0 }, // 0 = Full, 1 = Compact -- hidden/meta, UI layout state only
+  /* 42 */ { name: 'kParamPatternInvert',   type: 'bool',    def: 0 },
+  /* 43 */ { name: 'kParamTrigEvery',       type: 'int',     min: 1, max: 8, def: 1 },
+  /* 44 */ { name: 'kParamTrigOffset',      type: 'int',     min: 0, max: 7, def: 0 },
+  /* 45 */ { name: 'kParamRotationDriftPeriod', type: 'int', min: 0, max: 128, def: 0 },
+  /* 46 */ { name: 'kParamRatchetCount',    type: 'int',     min: 1, max: 8, def: 1 },
 ];
 
 const NAME_TO_IDX = {};
@@ -146,24 +151,31 @@ function wrapKnobWithLabel(knobEl, idx) {
   cell.appendChild(valueP);
 }
 
-function bindKnobDrag(el, idx, onLiveChange, defaultNorm) {
-  let dragging = false, startY = 0, startNorm = 0;
-  const DRAG_RANGE = 150;
+// Shared drag-gesture chrome for both knobs and sliders: listener wiring
+// (pointer + touch + blur-cancel), double-click-to-default, Alt+wheel
+// nudging, and keyboard arrows. The two controls only differ in how a
+// pointer position/delta turns into a norm -- that's the one thing callers
+// supply (`computeNorm`) plus an optional per-control hook that runs once at
+// gesture start (`onGestureStart`; the knob uses it to capture a drag
+// baseline, the slider uses it to jump straight to the click position).
+function bindPointerGesture(el, idx, computeNorm, { onGestureStart, onLiveChange, defaultNorm } = {}) {
+  let dragging = false;
+
+  const currentNorm = () => {
+    if (onLiveChange && idx === -1) {
+      return (parseFloat(el.style.getPropertyValue('--pct')) || 0) / 100;
+    }
+    return realToNorm(PARAMS[idx] || { type: 'percent' }, state[idx]);
+  };
+
+  const applyNorm = norm => {
+    if (onLiveChange) onLiveChange(norm);
+    else setParam(idx, normToReal(PARAMS[idx], norm));
+  };
 
   const onMove = e => {
     if (!dragging) return;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    // Shift = fine-tune: same physical drag distance covers a much smaller
-    // value range, useful for dialing in sensitive meta-controls like
-    // Chaos/Density. No effect on touch (TouchEvent has no shiftKey).
-    const range = e.shiftKey ? DRAG_RANGE * 5 : DRAG_RANGE;
-    const delta = (startY - clientY) / range;
-    const norm = clamp01(startNorm + delta);
-    if (onLiveChange) {
-      onLiveChange(norm);
-    } else {
-      setParam(idx, normToReal(PARAMS[idx], norm));
-    }
+    applyNorm(computeNorm(e));
   };
 
   const onUp = () => {
@@ -177,18 +189,10 @@ function bindKnobDrag(el, idx, onLiveChange, defaultNorm) {
     gestureEnd(idx);
   };
 
-  const currentNorm = () => {
-    if (onLiveChange && idx === -1) {
-      return (parseFloat(el.style.getPropertyValue('--pct')) || 0) / 100;
-    }
-    return realToNorm(PARAMS[idx] || { type: 'percent' }, state[idx]);
-  };
-
   const onDown = e => {
     dragging = true;
-    startY = e.touches ? e.touches[0].clientY : e.clientY;
-    startNorm = currentNorm();
     gestureBegin(idx);
+    onGestureStart?.(e, applyNorm, currentNorm);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     window.addEventListener('touchmove', onMove, { passive: false });
@@ -218,8 +222,7 @@ function bindKnobDrag(el, idx, onLiveChange, defaultNorm) {
     const dir = e.deltaY < 0 ? 1 : -1;
     const newNorm = clamp01(currentNorm() + dir * step);
     gestureBegin(idx);
-    if (onLiveChange) onLiveChange(newNorm);
-    else setParam(idx, normToReal(PARAMS[idx], newNorm));
+    applyNorm(newNorm);
     gestureEnd(idx);
   };
 
@@ -228,6 +231,30 @@ function bindKnobDrag(el, idx, onLiveChange, defaultNorm) {
   el.addEventListener('dblclick', onDblClick);
   el.addEventListener('wheel', onWheel, { passive: false });
   bindKeyboard(el, idx, onLiveChange);
+
+  return { currentNorm };
+}
+
+function bindKnobDrag(el, idx, onLiveChange, defaultNorm) {
+  const DRAG_RANGE = 150;
+  let startY = 0, startNorm = 0, currentNorm;
+
+  const computeNorm = e => {
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    // Shift = fine-tune: same physical drag distance covers a much smaller
+    // value range, useful for dialing in sensitive meta-controls like
+    // Chaos/Density. No effect on touch (TouchEvent has no shiftKey).
+    const range = e.shiftKey ? DRAG_RANGE * 5 : DRAG_RANGE;
+    const delta = (startY - clientY) / range;
+    return clamp01(startNorm + delta);
+  };
+
+  const onGestureStart = e => {
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startNorm = currentNorm();
+  };
+
+  ({ currentNorm } = bindPointerGesture(el, idx, computeNorm, { onGestureStart, onLiveChange, defaultNorm }));
 }
 
 function initSliders(root) {
@@ -239,68 +266,20 @@ function initSliders(root) {
 }
 
 function bindHorizontalSlider(el, idx, isVertical = false) {
-  function normFromEvent(e) {
+  const computeNorm = e => {
     const rect = el.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    if (isVertical) {
-      return clamp01(1 - (clientY - rect.top) / rect.height);
-    }
+    if (isVertical) return clamp01(1 - (clientY - rect.top) / rect.height);
     return clamp01((clientX - rect.left) / rect.width);
-  }
-  let dragging = false;
-
-  const onMove = e => {
-    if (!dragging) return;
-    setParam(idx, normToReal(PARAMS[idx], normFromEvent(e)));
   };
 
-  const onUp = () => {
-    if (!dragging) return;
-    dragging = false;
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-    window.removeEventListener('touchmove', onMove);
-    window.removeEventListener('touchend', onUp);
-    window.removeEventListener('blur', onUp);
-    gestureEnd(idx);
-  };
+  // Unlike the knob's relative drag, a slider jumps straight to wherever you
+  // clicked -- so the gesture-start hook applies a value immediately instead
+  // of just recording a baseline.
+  const onGestureStart = (e, applyNorm) => applyNorm(computeNorm(e));
 
-  const onDown = e => {
-    dragging = true;
-    gestureBegin(idx);
-    setParam(idx, normToReal(PARAMS[idx], normFromEvent(e)));
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
-    window.addEventListener('blur', onUp);
-    if (e.cancelable) e.preventDefault();
-  };
-
-  const onDblClick = () => {
-    gestureBegin(idx);
-    setParam(idx, PARAMS[idx].def);
-    gestureEnd(idx);
-  };
-
-  // See bindKnobDrag's onWheel for why this requires Alt/Option.
-  const onWheel = e => {
-    if (!e.altKey) return;
-    e.preventDefault();
-    const step = e.shiftKey ? 0.05 : 0.01;
-    const dir = e.deltaY < 0 ? 1 : -1;
-    const newNorm = clamp01(realToNorm(PARAMS[idx], state[idx]) + dir * step);
-    gestureBegin(idx);
-    setParam(idx, normToReal(PARAMS[idx], newNorm));
-    gestureEnd(idx);
-  };
-
-  el.addEventListener('mousedown', onDown);
-  el.addEventListener('touchstart', onDown, { passive: false });
-  el.addEventListener('dblclick', onDblClick);
-  el.addEventListener('wheel', onWheel, { passive: false });
-  bindKeyboard(el, idx);
+  bindPointerGesture(el, idx, computeNorm, { onGestureStart });
 }
 
 function bindKeyboard(el, idx, onLiveChange) {
@@ -424,14 +403,31 @@ function initPillSelectors(root) {
 }
 
 // ---- Push current state into every bound control (used on load + after any param change) ----
+//
+// refreshControlsFor runs on every param change, including once per
+// mousemove tick while a knob/slider is being dragged -- so it's a hot path.
+// controlCache holds the actual element references (built once, in
+// buildControlCache() below) instead of re-running querySelectorAll's
+// attribute-selector match against the whole document on every tick.
+
+const controlCache = PARAMS.map(() => ({ bound: [], knobValueEls: [], readoutEls: [] }));
+
+function buildControlCache() {
+  PARAMS.forEach((p, idx) => {
+    controlCache[idx].bound = Array.from(document.querySelectorAll(`[data-param="${p.name}"]`));
+    controlCache[idx].knobValueEls = Array.from(document.querySelectorAll(`[data-knob-value-for="${idx}"]`));
+    controlCache[idx].readoutEls = Array.from(document.querySelectorAll(`[data-readout="${p.name}"]`));
+  });
+}
 
 function refreshControlsFor(idx) {
   const p = PARAMS[idx];
   const real = state[idx];
   const norm = realToNorm(p, real);
   const pct = Math.round(norm * 100);
+  const cache = controlCache[idx];
 
-  document.querySelectorAll(`[data-param="${p.name}"]`).forEach(el => {
+  cache.bound.forEach(el => {
     if (el.classList.contains('knob') || el.classList.contains('slider')) {
       el.style.setProperty('--pct', pct);
       if (el.classList.contains('knob')) updateKnobIndicator(el, pct);
@@ -447,12 +443,8 @@ function refreshControlsFor(idx) {
     }
   });
 
-  document.querySelectorAll(`[data-knob-value-for="${idx}"]`).forEach(elm => {
-    elm.textContent = formatValue(p, real);
-  });
-  document.querySelectorAll(`[data-readout="${p.name}"]`).forEach(elm => {
-    elm.textContent = formatValue(p, real);
-  });
+  cache.knobValueEls.forEach(elm => { elm.textContent = formatValue(p, real); });
+  cache.readoutEls.forEach(elm => { elm.textContent = formatValue(p, real); });
 }
 
 function refreshAllControls() {
@@ -691,6 +683,10 @@ function boot() {
   initPillSelectors(document);
   initCompactControls();
 
+  // Every control-creating init*() above has run (knob labels/value readouts,
+  // dropdown/pill children), so the DOM is stable -- safe to snapshot now.
+  buildControlCache();
+
   // Routed through kParamUIViewMode (not a direct showView() call) so the
   // choice rides the host's normal param state save/recall and survives the
   // plugin window being closed and reopened -- onParamStateChanged below
@@ -742,19 +738,43 @@ function OnControlChange(ctrlTag, value) {}
 function OnControlMessage(ctrlTag, msgTag, msg) {}
 function OnMidiMsg(statusByte, d1, d2) {}
 
+// The PARAMS array above is positional, not name-based -- it has to match
+// EParams in MidiGenerator.h index-for-index (see the comment at the top of
+// this file). Nothing on the C++ side enforces that; if the two ever drift
+// (a param inserted/removed/reordered on one side and not the other), every
+// knob below the drift point silently controls the wrong parameter. The
+// real host already sends its actual param list on load (see below) --
+// checking the one thing that's cheap and unambiguous to check here (the
+// count) turns a silent mismatch into a loud one instead of catching it by
+// finding the wrong knob attached to the wrong wire the hard way.
+function checkParamRegistrySync(hostParams) {
+  if (!Array.isArray(hostParams)) return;
+  if (hostParams.length !== PARAMS.length) {
+    console.error(
+      `[app.js] PARAM REGISTRY MISMATCH: host reports ${hostParams.length} params, ` +
+      `local PARAMS array has ${PARAMS.length}. EParams in MidiGenerator.h and the ` +
+      `PARAMS array in app.js have drifted -- every control is likely bound to the wrong parameter.`
+    );
+  }
+}
+
 function OnMessage(msgTag, dataSize, data) {
-  // Real host sends full param metadata here on load (msgTag == -1). Our
-  // local PARAMS registry above already mirrors the C++ EParams exactly, so
-  // this is currently just a hook for later cross-checking / dynamic sync.
+  // Real host sends full param metadata here on load (msgTag == -1).
   if (msgTag === -1 && dataSize > 0) {
     try {
       const json = JSON.parse(window.atob(data));
-      console.log('[app.js] Host param metadata received:', json);
+      checkParamRegistrySync(json.params);
     } catch (e) { /* ignore */ }
   } else if (msgTag === 101) {
     onExportResult(true);
   } else if (msgTag === 102) {
     onExportResult(false);
+  } else if (msgTag === 103) {
+    // Live host tempo (see MidiGenerator::OnIdle) -- keeps the ambient
+    // breathing animation's cycle length tempo-relative instead of the
+    // hardcoded 120bpm fallback used until the first update arrives.
+    const bpm = parseFloat(window.atob(data));
+    if (!isNaN(bpm)) updateMasterTempo(bpm);
   }
 }
 

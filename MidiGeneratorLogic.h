@@ -1,8 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <array>
-#include <algorithm>   // FIX: std::sort / std::unique were used without this.
+#include <algorithm>   // std::sort / std::unique / std::clamp
 #include <cstdint>
 #include <cmath>
 // Removed juce_core to allow standalone testing
@@ -15,14 +14,18 @@
 // rotation. With the accumulator seeded (below) this matches canonical
 // Bjorklund exactly for E(4,16), E(3,8), E(7,16), E(2,4) and differs only by
 // rotation for E(5,16) -- which the per-track rotation control covers.
+//
+// Patterns are carried as a uint32_t bitmask (bit i = step i fires), not a
+// std::vector<bool>: kParamSteps is capped at 32, so a fixed-width int holds
+// any pattern this plugin can produce with zero heap traffic.
 //==============================================================================
-inline std::vector<bool> computeEuclidean(int pulses, int steps)
+inline uint32_t computeEuclidean(int pulses, int steps)
 {
-    if (steps <= 0) return {};
-    if (pulses <= 0) return std::vector<bool>(steps, false);
-    if (pulses >= steps) return std::vector<bool>(steps, true);
+    steps = std::clamp(steps, 0, 32);
+    if (steps <= 0 || pulses <= 0) return 0;
+    if (pulses >= steps) return steps == 32 ? 0xFFFFFFFFu : ((1u << steps) - 1u);
 
-    std::vector<bool> result(steps, false);
+    uint32_t result = 0;
 
     // FIX: seeding the accumulator at (steps - pulses) makes step 0 the first
     // pulse. Starting at 0 meant the accumulator could never reach `steps` on
@@ -37,7 +40,7 @@ inline std::vector<bool> computeEuclidean(int pulses, int steps)
         if (bucket >= steps)
         {
             bucket -= steps;
-            result[i] = true;
+            result |= (1u << i);
         }
     }
     return result;
@@ -46,14 +49,17 @@ inline std::vector<bool> computeEuclidean(int pulses, int steps)
 // Positive rotation shifts hits *earlier* (pattern moves left). If you'd rather
 // the knob push hits later, negate `rotation` at the call site in
 // rebuildTrackPattern rather than here, so saved presets keep their meaning.
-inline std::vector<bool> rotatePattern(std::vector<bool> p, int rotation)
+inline uint32_t rotatePattern(uint32_t bits, int steps, int rotation)
 {
-    int n = (int)p.size();
-    if (n <= 1) return p;
-    rotation = ((rotation % n) + n) % n;
-    if (rotation > 0) 
-        std::rotate(p.begin(), p.begin() + rotation, p.end());
-    return p;
+    if (steps <= 1) return bits;
+    rotation = ((rotation % steps) + steps) % steps;
+    if (rotation == 0) return bits;
+
+    uint32_t mask = (steps >= 32) ? 0xFFFFFFFFu : ((1u << steps) - 1u);
+    bits &= mask;
+    // n-bit rotate-right by `rotation`: new[i] = old[(i + rotation) % steps],
+    // matching the original std::rotate(begin, begin + rotation, end).
+    return ((bits >> rotation) | (bits << (steps - rotation))) & mask;
 }
 
 //==============================================================================
@@ -84,43 +90,23 @@ enum class ChordType : int
     Count
 };
 
-inline const std::vector<int>& getChordIntervals(ChordType type)
+inline const std::array<int, 6>& getChordIntervalsFixed(ChordType type, int& outCount)
 {
-    static const std::array<std::vector<int>, (size_t)ChordType::Count> table =
-    {{
-        {0},
-        {0, 7},
-        {0, 12},
-        {0, 4, 7},
-        {0, 3, 7},
-        {0, 3, 6},
-        {0, 4, 8},
-        {0, 2, 7},
-        {0, 5, 7},
-        {0, 4, 7, 11},
-        {0, 3, 7, 10},
-        {0, 4, 7, 10},
-        {0, 3, 7, 10, 14},
-        {0, 4, 7, 11, 14},
-        {0, 4, 7, 10, 14},
-        {0, 3, 7, 10, 14, 17},
-        {0, 4, 7, 9},
-        {0, 3, 7, 9},
-        {0, 3, 6, 10},
-        {0, 3, 6, 9},
-    }};
-    return table[(size_t)type];
-}
-
-inline const char* getChordName(ChordType type)
-{
-    static const char* names[] = {
-        "Single", "Power",  "Octave",  "Major",  "Minor",
-        "Dim",    "Aug",    "Sus2",    "Sus4",   "Maj7",
-        "Min7",   "Dom7",   "Min9",    "Maj9",   "Dom9",
-        "Min11",  "Maj6",   "Min6",    "HalfDim7","Dim7"
+    // Fixed-width table (max 6 intervals for Min11) -- no heap, matches the
+    // fixed-capacity chord math below.
+    static const struct { std::array<int, 6> iv; int n; } table[(size_t)ChordType::Count] =
+    {
+        { {0,0,0,0,0,0}, 1 }, { {0,7,0,0,0,0}, 2 }, { {0,12,0,0,0,0}, 2 },
+        { {0,4,7,0,0,0}, 3 }, { {0,3,7,0,0,0}, 3 }, { {0,3,6,0,0,0}, 3 },
+        { {0,4,8,0,0,0}, 3 }, { {0,2,7,0,0,0}, 3 }, { {0,5,7,0,0,0}, 3 },
+        { {0,4,7,11,0,0}, 4 }, { {0,3,7,10,0,0}, 4 }, { {0,4,7,10,0,0}, 4 },
+        { {0,3,7,10,14,0}, 5 }, { {0,4,7,11,14,0}, 5 }, { {0,4,7,10,14,0}, 5 },
+        { {0,3,7,10,14,17}, 6 }, { {0,4,7,9,0,0}, 4 }, { {0,3,7,9,0,0}, 4 },
+        { {0,3,6,10,0,0}, 4 }, { {0,3,6,9,0,0}, 4 },
     };
-    return names[(int)type];
+    const auto& e = table[(size_t)type];
+    outCount = e.n;
+    return e.iv;
 }
 
 inline int getChordTypeCount() { return (int)ChordType::Count; }
@@ -135,12 +121,6 @@ enum class VoicingStyle : int
     Count
 };
 
-inline const char* getVoicingName(VoicingStyle v)
-{
-    static const char* names[] = {"Close", "Drop2", "Drop3", "Spread", "Wide"};
-    return names[(int)v];
-}
-
 // FIX: fold out-of-range notes by octaves instead of clamping to 0/127.
 // jlimit() collapsed every over-range voice onto the same pitch, which both
 // destroyed the chord and created duplicate note-ons -- the first note-off
@@ -152,85 +132,101 @@ inline int foldIntoMidiRange(int n)
     return n;
 }
 
-inline std::vector<int> buildChord(int rootNote, ChordType type,
-                                    VoicingStyle voicing, int numNotes,
-                                    int spreadOctaves)
+//==============================================================================
+// NoteSet: fixed-capacity replacement for std::vector<int> as the return type
+// for chord-building. Every hit this plugin can produce tops out at 8 notes
+// (6-voice chord cap plus headroom for the octave-doubling pad below), so a
+// stack array with a count sidesteps a heap allocation per triggered step --
+// buildTrackNotes() is called from ProcessBlock, i.e. the audio thread.
+//==============================================================================
+constexpr int kMaxChordNotes = 8;
+
+struct NoteSet
 {
-    const auto& intervals = getChordIntervals(type);
-    if (intervals.empty()) return {rootNote};
+    int notes[kMaxChordNotes];
+    int count = 0;
 
-    std::vector<int> raw;
-    raw.reserve((size_t)std::max(numNotes, (int)intervals.size()));
-    for (int interval : intervals)
-        raw.push_back(rootNote + interval);
+    void push(int n) { if (count < kMaxChordNotes) notes[count++] = n; }
+    int*       begin()       { return notes; }
+    int*       end()         { return notes + count; }
+    const int* begin() const { return notes; }
+    const int* end()   const { return notes + count; }
+};
 
-    int rawCount = (int)raw.size();
+inline NoteSet buildChord(int rootNote, ChordType type, VoicingStyle voicing, int numNotes)
+{
+    numNotes = std::clamp(numNotes, 1, kMaxChordNotes);
+
+    int intervalCount = 0;
+    const auto& intervals = getChordIntervalsFixed(type, intervalCount);
+
+    int raw[kMaxChordNotes];
+    for (int i = 0; i < intervalCount; ++i)
+        raw[i] = rootNote + intervals[i];
+    const int origCount = intervalCount;
+    int count = intervalCount;
 
     if (numNotes <= 1)
-        return {raw[0]};
+    {
+        NoteSet single; single.push(raw[0]); return single;
+    }
 
-    if (numNotes <= rawCount)
-        raw.resize((size_t)numNotes);
+    if (numNotes <= origCount)
+        count = numNotes;
     else
-        while (raw.size() < (size_t)numNotes)
-            raw.push_back(raw[raw.size() - (size_t)rawCount] + 12);
+        while (count < numNotes)
+        {
+            raw[count] = raw[count - origCount] + 12;
+            ++count;
+        }
 
-    std::vector<int> notes;
     switch (voicing)
     {
     case VoicingStyle::Close:
-        notes = raw;
         break;
 
     case VoicingStyle::Drop2:
-        notes = raw;
-        if ((int)notes.size() >= 4) notes[notes.size() - 2] -= 12;
+        if (count >= 4) raw[count - 2] -= 12;
         break;
 
     case VoicingStyle::Drop3:
-        notes = raw;
-        if ((int)notes.size() >= 4) notes[notes.size() - 3] -= 12;
+        if (count >= 4) raw[count - 3] -= 12;
         break;
 
     case VoicingStyle::Spread:
         // Fans voices outward alternately. Deliberately extreme: with 6 voices
-        // this spans ~6 octaves, so the fold above does real work here.
-        notes = raw;
-        for (int i = 0; i < (int)notes.size(); ++i)
+        // this spans ~6 octaves, so the fold below does real work here.
+        for (int i = 0; i < count; ++i)
         {
-            if (i % 2 == 1) notes[i] += 12 * ((i / 2) + 1);
-            else if (i > 0) notes[i] -= 12 * (i / 2);
+            if (i % 2 == 1) raw[i] += 12 * ((i / 2) + 1);
+            else if (i > 0) raw[i] -= 12 * (i / 2);
         }
         break;
 
     case VoicingStyle::Wide:
-        notes = raw;
-        for (int i = 1; i < (int)notes.size(); ++i)
-            notes[i] += 12 * spreadOctaves * i; // FIX: actually spread them by octaves based on index
+        // Wide's only distinguishing behavior was an octave-spread driven by
+        // spreadOctaves, which was never wired to a parameter (always 0) --
+        // dead code, removed. Wide is currently identical to Close.
         break;
 
     default:
-        notes = raw;
         break;
     }
 
-    // FIX: Only add full octaves to preserve chord harmony.
-    // Integer division is applied to the octave multiplier, not the semitones.
-    if (spreadOctaves > 0 && voicing != VoicingStyle::Wide)
-        for (int i = 1; i < (int)notes.size(); ++i)
-            notes[i] += 12 * ((spreadOctaves * i) / (int)notes.size());
+    for (int i = 0; i < count; ++i)
+        raw[i] = foldIntoMidiRange(raw[i]);
 
-    for (int& n : notes)
-        n = foldIntoMidiRange(n);
-
-    std::sort(notes.begin(), notes.end());
+    std::sort(raw, raw + count);
 
     // FIX: collapse duplicates. Two note-ons for the same pitch on the same
     // channel means the first note-off releases both -- and the second is
     // orphaned. (A MIDI chord is a set of pitches; sorting here is harmless.)
-    notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
+    count = (int)(std::unique(raw, raw + count) - raw);
 
-    return notes;
+    NoteSet result;
+    for (int i = 0; i < count; ++i)
+        result.push(raw[i]);
+    return result;
 }
 
 //==============================================================================
@@ -254,14 +250,6 @@ enum class ScaleMode : int
     Count
 };
 
-inline const char* getScaleModeName(ScaleMode m)
-{
-    static const char* names[] = {
-        "Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian"
-    };
-    return names[(int)m];
-}
-
 inline int getScaleModeCount() { return (int)ScaleMode::Count; }
 
 inline const std::array<int, 7>& getScaleIntervals(ScaleMode m)
@@ -276,12 +264,6 @@ inline const std::array<int, 7>& getScaleIntervals(ScaleMode m)
         {0, 1, 3, 5, 6, 8, 10},  // Locrian
     }};
     return table[(size_t)m];
-}
-
-inline const char* getKeyName(int pitchClass)
-{
-    static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-    return names[((pitchClass % 12) + 12) % 12];
 }
 
 // Nearest in-scale MIDI note to `note` (searches outward by semitone; every
@@ -331,36 +313,37 @@ inline int scaleDegreeToNote(int key, ScaleMode mode, int degreeIndex, int refer
 // signal than the 4-voice chord the next hit gets). To keep loudness
 // consistent hit-to-hit, pad back up to `numNotes` by octave-doubling
 // existing tones rather than leaving the chord thinned.
-inline std::vector<int> buildChordInKey(int rootNote, ChordType type, VoicingStyle voicing,
-                                         int numNotes, int spreadOctaves,
-                                         int key, ScaleMode mode)
+inline NoteSet buildChordInKey(int rootNote, ChordType type, VoicingStyle voicing,
+                                int numNotes, int key, ScaleMode mode)
 {
-    auto notes = buildChord(rootNote, type, voicing, numNotes, spreadOctaves);
+    NoteSet result = buildChord(rootNote, type, voicing, numNotes);
 
-    for (int& n : notes)
+    for (int& n : result)
         n = foldIntoMidiRange(quantizeToScale(n, key, mode));
 
-    std::sort(notes.begin(), notes.end());
-    notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
+    std::sort(result.begin(), result.end());
+    result.count = (int)(std::unique(result.begin(), result.end()) - result.begin());
 
-    if (!notes.empty() && (int)notes.size() < numNotes)
+    if (result.count > 0 && result.count < numNotes)
     {
         // Index against the *current* (growing) size, not the original --
         // otherwise when the chord collapsed to a single tone, every pass
         // retries the exact same +12 doubling forever instead of stacking
         // successive octaves (+12, +24, +36, ...) to actually reach numNotes.
-        size_t tries = 0;
-        while ((int)notes.size() < numNotes && tries < (size_t)numNotes * 8)
+        int tries = 0;
+        int maxTries = numNotes * 8;
+        while (result.count < numNotes && result.count < kMaxChordNotes && tries < maxTries)
         {
-            int doubled = foldIntoMidiRange(notes[tries % notes.size()] + 12);
-            if (std::find(notes.begin(), notes.end(), doubled) == notes.end())
-                notes.push_back(doubled);
+            int doubled = foldIntoMidiRange(result.notes[tries % result.count] + 12);
+            bool alreadyPresent = std::find(result.begin(), result.end(), doubled) != result.end();
+            if (!alreadyPresent)
+                result.push(doubled);
             ++tries;
         }
-        std::sort(notes.begin(), notes.end());
+        std::sort(result.begin(), result.end());
     }
 
-    return notes;
+    return result;
 }
 
 //==============================================================================
@@ -378,12 +361,6 @@ enum class SequenceMode : int
     Chaos     = 2,  // logistic-map iteration; deterministic but non-repeating
     Count
 };
-
-inline const char* getSequenceModeName(SequenceMode m)
-{
-    static const char* names[] = { "Euclidean", "Density", "Chaos" };
-    return names[(int)m];
-}
 
 inline int getSequenceModeCount() { return (int)SequenceMode::Count; }
 
@@ -414,10 +391,40 @@ struct EuclideanTrack
     int rotation    = 0;
     int rootNote    = 60;
 
+    // Flips active/inactive steps in the Euclidean pattern after rotation --
+    // doubles the pattern vocabulary for free (E(pulses,steps) inverted is
+    // E(steps-pulses,steps) up to rotation, but expressing it as a toggle on
+    // top of the existing Pulses/Rotation knobs is simpler than making the
+    // user retune both to get the complementary shape). Density/Chaos modes
+    // don't use patternBits, so this only affects Euclidean mode.
+    bool patternInvert = false;
+
+    // Track-level trig condition: this track is only "live" once every
+    // trigEvery passes through the pattern (loop 0-indexed, gated against
+    // trigOffset). trigEvery=1 (default) means always live -- the existing
+    // per-hit sequencing is untouched unless this is deliberately dialed in.
+    // Independent of SequenceMode: a whole track dropping in/out on a slow,
+    // fixed cadence is structured long-form evolution, distinct from (and
+    // stackable with) Density/Chaos/harmony drift's per-hit randomness.
+    int trigEvery  = 1; // 1-8
+    int trigOffset = 0; // which of every trigEvery loops this plays on
+
+    // Rotation Drift: every rotationDriftPeriod 16th-notes, the Euclidean
+    // pattern's *effective* rotation (rotation + a live, time-derived offset)
+    // advances by one step and wraps mod `steps`. 0 = off (the manual
+    // Rotation knob is the only source of rotation, same as before this
+    // existed). Deliberately NOT tied to hits or loop count the way trig
+    // conditions/harmony drift are -- it's a fixed-cadence crawl independent
+    // of both the rhythm's own length and its RNG, so the pattern's phase
+    // against the downbeat slowly and predictably drifts without ever
+    // needing a dice roll. Two periods that don't evenly divide each other
+    // (e.g. 16 steps against a 24-step drift period) only fully realign
+    // after their combined cycle -- long-form phasing, not randomness.
+    int rotationDriftPeriod = 0;
+
     ChordType chordType     = ChordType::SingleNote;
     VoicingStyle voicing    = VoicingStyle::Close;
     int chordNotes          = 3;
-    int chordSpread         = 0;
 
     // When on, every hit is exactly the scale-quantized root note -- no
     // chord/voicing math at all. For lead lines, bass, and monophonic synth
@@ -438,6 +445,18 @@ struct EuclideanTrack
     float gate          = 0.85f;
     float probability   = 1.0f;
 
+    // Retriggers a hit ratchetCount times within the current 16th-note step
+    // instead of one sustained note-on. 1 = off (unchanged behavior). Scoped
+    // to hits that resolve to a single note (monoMode, or any chord voicing
+    // that happens to collapse to one note) -- ratcheting a full chord would
+    // multiply note count by ratchetCount per hit, straight into the
+    // polyphony cap; a rapid single-note burst is the actually-useful case
+    // (drum-machine-style rolls) and never stresses voice count regardless
+    // of ratchetCount, since retriggers are sequential, not simultaneous.
+    // Overrides noteLengthSteps/gate for that hit -- a ratchet is a burst
+    // confined to one step, not N copies of a potentially many-bar sustain.
+    int ratchetCount = 1;
+
     SequenceMode seqMode = SequenceMode::Euclidean;
     float density        = 0.5f;   // Density mode: chance any given step fires
     float chaosAmount    = 0.5f;   // Chaos mode: 0..1 -> logistic-map r in the chaotic band
@@ -457,38 +476,33 @@ struct EuclideanTrack
     int midiChannel = 1;
     int rateDiv     = 16;
     bool muted      = false;
-    bool solo       = false;   // declared but never read anywhere.
 
-    std::vector<bool> pattern;
+    uint32_t patternBits = 0; // bit i set => step i fires (Euclidean mode only)
     int currentStep = -1;
 };
 
 // Notes for one triggered hit. Mono mode bypasses the chord engine entirely
 // and returns just the scale-quantized root -- see EuclideanTrack::monoMode.
-inline std::vector<int> buildTrackNotes(const EuclideanTrack& t, int scaleRoot, int key, ScaleMode mode)
+inline NoteSet buildTrackNotes(const EuclideanTrack& t, int scaleRoot, int key, ScaleMode mode)
 {
     if (t.monoMode)
-        return { foldIntoMidiRange(scaleRoot) };
+    {
+        NoteSet single;
+        single.push(foldIntoMidiRange(scaleRoot));
+        return single;
+    }
 
-    return buildChordInKey(scaleRoot, t.chordType, t.voicing, t.chordNotes, t.chordSpread, key, mode);
+    return buildChordInKey(scaleRoot, t.chordType, t.voicing, t.chordNotes, key, mode);
 }
 
 //==============================================================================
 // 5. GLOBAL CONFIG
 //==============================================================================
-constexpr int kMaxTracks = 4;
-
 enum class ClockAlign : int
 {
     Hard = 0,   // note-ons land exactly on the grid
     Soft = 1    // note-ons get a small, per-hit randomized late nudge off the grid
 };
-
-inline const char* getClockAlignName(ClockAlign a)
-{
-    static const char* names[] = { "Hard", "Soft" };
-    return names[(int)a];
-}
 
 struct GlobalParams
 {
@@ -508,30 +522,58 @@ struct GlobalParams
 //==============================================================================
 inline void rebuildTrackPattern(EuclideanTrack& t)
 {
-    t.pattern = computeEuclidean(t.pulses, t.steps);
-    t.pattern = rotatePattern(t.pattern, t.rotation);
+    t.patternBits = computeEuclidean(t.pulses, t.steps);
+    t.patternBits = rotatePattern(t.patternBits, t.steps, t.rotation);
+
+    if (t.patternInvert)
+    {
+        int steps = std::clamp(t.steps, 0, 32);
+        uint32_t mask = (steps >= 32) ? 0xFFFFFFFFu : ((1u << steps) - 1u);
+        t.patternBits = (~t.patternBits) & mask;
+    }
 }
 
-inline void rebuildAllPatterns(std::vector<EuclideanTrack>& tracks)
+// Gates the *entire track* on/off for the current loopIndex (which pass
+// through the pattern this is -- callers derive it as an absolute step
+// count divided by the pattern length, no separate counter needed). Cheap
+// and side-effect-free, so callers should check this before
+// evaluateStepTrigger and skip it entirely on a closed loop -- that also
+// avoids burning RNG draws (Density/Chaos/probability) on loops that
+// wouldn't sound anyway.
+inline bool evaluateTrigCondition(const EuclideanTrack& t, int loopIndex)
 {
-    for (auto& t : tracks)
-        rebuildTrackPattern(t);
+    if (t.trigEvery <= 1) return true;
+    int offset = ((t.trigOffset % t.trigEvery) + t.trigEvery) % t.trigEvery;
+    int loop = ((loopIndex % t.trigEvery) + t.trigEvery) % t.trigEvery;
+    return loop == offset;
 }
 
 // Decides whether `stepIndex` fires, for whichever SequenceMode the track is
 // in, then thins the result by `probability`. This is the one place that
-// reads `pattern` for Euclidean mode and the only place `probability` (and
+// reads `patternBits` for Euclidean mode and the only place `probability` (and
 // the per-track RNG) gets used -- previously declared on the track but never
 // consulted.
-inline bool evaluateStepTrigger(EuclideanTrack& t, int stepIndex)
+// rotationDriftSteps: caller-derived live rotation offset from Rotation
+// Drift (see EuclideanTrack::rotationDriftPeriod) -- 0 when drift is off,
+// reproducing the exact prior behavior. Applied as one extra rotation on
+// top of the cached (already rotated+inverted) patternBits rather than
+// baking it into the cache, since it changes every step regardless of
+// whether Steps/Pulses/Rotation/Invert have -- rotatePattern() is cheap
+// (a couple of shifts, no allocation), so redoing it live every step here
+// costs nothing worth caching against.
+inline bool evaluateStepTrigger(EuclideanTrack& t, int stepIndex, int rotationDriftSteps = 0)
 {
     bool hit = false;
 
     switch (t.seqMode)
     {
         case SequenceMode::Euclidean:
-            hit = !t.pattern.empty() && t.pattern[stepIndex % (int)t.pattern.size()];
+        {
+            int steps = std::max(1, t.steps);
+            uint32_t bits = rotationDriftSteps != 0 ? rotatePattern(t.patternBits, steps, rotationDriftSteps) : t.patternBits;
+            hit = (bits >> (stepIndex % steps)) & 1u;
             break;
+        }
 
         case SequenceMode::Density:
             hit = randUnit01(t.rngState) < t.density;
@@ -539,7 +581,7 @@ inline bool evaluateStepTrigger(EuclideanTrack& t, int stepIndex)
 
         case SequenceMode::Chaos:
         {
-            double amt = t.chaosAmount < 0.f ? 0.f : (t.chaosAmount > 1.f ? 1.f : t.chaosAmount);
+            double amt = std::clamp((double)t.chaosAmount, 0.0, 1.0);
             double r = 3.57 + amt * (4.0 - 3.57); // 3.57.. is where the logistic map turns chaotic
             t.chaosX = r * t.chaosX * (1.0 - t.chaosX);
             // Guard against collapsing onto the 0 or 1 fixed points for r near the edges.
@@ -613,14 +655,6 @@ enum class ModSource : int
     Random,         // fresh random draw per hit -- a wandering modulation source
     Count
 };
-
-inline const char* getModSourceName(ModSource s)
-{
-    static const char* names[] = {
-        "Off", "Velocity", "Gate", "Probability", "Dens/Chaos", "Drift", "Random"
-    };
-    return names[(int)s];
-}
 
 inline int getModSourceCount() { return (int)ModSource::Count; }
 

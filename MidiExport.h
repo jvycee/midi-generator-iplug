@@ -94,20 +94,22 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
     for (int step = 0; step < totalSteps; ++step)
     {
         int stepIndex = step % patternSteps;
+        int loopIndex = step / patternSteps;
         int stepStartTick = step * sixteenthNoteTicks;
+        int rotationDriftSteps = track.rotationDriftPeriod > 0 ? (step / track.rotationDriftPeriod) : 0;
 
-        if (!evaluateStepTrigger(track, stepIndex))
+        if (!evaluateTrigCondition(track, loopIndex) || !evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
             continue;
 
         applyHarmonyDrift(track);
         int scaleRoot = scaleDegreeToNote(globalParams.key, globalParams.scaleMode, track.scaleDegree, track.rootNote);
-        auto notes = buildTrackNotes(track, scaleRoot, globalParams.key, globalParams.scaleMode);
+        NoteSet notes = buildTrackNotes(track, scaleRoot, globalParams.key, globalParams.scaleMode);
 
         if (globalParams.globalTranspose != 0)
         {
             for (int& n : notes) n = foldIntoMidiRange(n + globalParams.globalTranspose);
             std::sort(notes.begin(), notes.end());
-            notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
+            notes.count = (int)(std::unique(notes.begin(), notes.end()) - notes.begin());
         }
 
         int gateTicks = std::max(1, (int)(sixteenthNoteTicks * std::max(1, track.noteLengthSteps) * track.gate));
@@ -120,6 +122,13 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
 
         int onTick = stepStartTick + timingOffsetTicks;
         int offTick = onTick + gateTicks;
+
+        // Ratchet: mirrors ProcessBlock exactly (ticks instead of samples) --
+        // see EuclideanTrack::ratchetCount and the comment in ProcessBlock.
+        int ratchetCount = std::clamp(track.ratchetCount, 1, 8);
+        bool applyRatchet = ratchetCount > 1 && notes.count == 1;
+        int ratchetSliceTicks = std::max(1, sixteenthNoteTicks / ratchetCount);
+        int ratchetGateTicks = std::max(1, (int)(ratchetSliceTicks * track.gate));
 
         for (int mi = 0; mi < numModSlots; ++mi)
         {
@@ -138,10 +147,10 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
         tracked.erase(std::remove_if(tracked.begin(), tracked.end(),
             [onTick](const TrackedNote& t) { return t.offTick <= (uint32_t)onTick; }), tracked.end());
 
-        if ((int)notes.size() > maxVoices)
-            notes.resize(maxVoices);
+        if (notes.count > maxVoices)
+            notes.count = maxVoices;
 
-        while ((int)tracked.size() + (int)notes.size() > maxVoices && !tracked.empty())
+        while ((int)tracked.size() + notes.count > maxVoices && !tracked.empty())
         {
             events[tracked.front().offEventIndex].tick = (uint32_t)onTick;
             tracked.erase(tracked.begin());
@@ -150,10 +159,26 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
         for (int note : notes)
         {
             uint8_t n = (uint8_t)std::min(127, std::max(0, note));
-            events.push_back({ (uint32_t)onTick,  2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
-            size_t offIdx = events.size();
-            events.push_back({ (uint32_t)offTick, 1, { (uint8_t)(0x80 | channel), n, 0 } });
-            tracked.push_back({ (uint32_t)offTick, offIdx });
+
+            if (!applyRatchet)
+            {
+                events.push_back({ (uint32_t)onTick,  2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
+                size_t offIdx = events.size();
+                events.push_back({ (uint32_t)offTick, 1, { (uint8_t)(0x80 | channel), n, 0 } });
+                tracked.push_back({ (uint32_t)offTick, offIdx });
+            }
+            else
+            {
+                for (int r = 0; r < ratchetCount; ++r)
+                {
+                    uint32_t rOnTick = (uint32_t)(onTick + r * ratchetSliceTicks);
+                    uint32_t rOffTick = rOnTick + (uint32_t)ratchetGateTicks;
+                    events.push_back({ rOnTick,  2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
+                    size_t offIdx = events.size();
+                    events.push_back({ rOffTick, 1, { (uint8_t)(0x80 | channel), n, 0 } });
+                    tracked.push_back({ rOffTick, offIdx });
+                }
+            }
         }
     }
 
