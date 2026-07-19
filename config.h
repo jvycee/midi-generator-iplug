@@ -3,7 +3,13 @@
 #define PLUG_VERSION_HEX 0x00010000
 #define PLUG_VERSION_STR "1.0.0"
 #define PLUG_UNIQUE_ID 'dm39'
-#define PLUG_MFR_ID 'Jvce'  // 4-char manufacturer code (AU/VST FourCC); derived from Jvycee. Must stay exactly 4 chars with at least one uppercase (all-lowercase is Apple-reserved).
+// 4-char manufacturer code (AU/VST FourCC), derived from Jvycee. Must be
+// EXACTLY 4 chars, at least one uppercase (all-lowercase is Apple-reserved).
+// Keep this comment ABOVE the #define: prepare_resources-mac.py reads the
+// whole line after the macro into the plist and does NOT strip trailing
+// comments, so an inline // comment here silently corrupts the AU
+// manufacturer code and the plugin vanishes from the host's plugin list.
+#define PLUG_MFR_ID 'Jvce'
 #define PLUG_URL_STR "https://github.com/jvycee"
 #define PLUG_EMAIL_STR "" // TODO: set a real support/contact email before release -- shows in plugin metadata
 #define PLUG_COPYRIGHT_STR "Copyright 2026 Jvycee"
