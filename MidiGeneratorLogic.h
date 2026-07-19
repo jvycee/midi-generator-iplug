@@ -590,6 +590,26 @@ inline void rebuildTrackPattern(EuclideanTrack& t)
     }
 }
 
+// Given the last-processed 16th-note index and the current one, returns the
+// first 16th index a block should (re)process so no boundary the block
+// straddled gets dropped -- callers then run [result, currentStep]. Pure
+// integer logic, factored out of ProcessBlock so it's unit-testable.
+//
+//  - lastStep < 0 (first step after transport start/reset): current only --
+//    we can't know how long we were stopped, so don't invent catch-up steps.
+//  - forward gap of 1..maxCatchup: catch up (lastStep+1 .. current).
+//  - gap <= 0 (backward: a loop wrap or rewind) or gap > maxCatchup (a
+//    transport locate): current only -- those advance the index too, but by
+//    far more than a real buffer straddle, and catching them up would fire a
+//    burst of notes for time that never actually elapsed.
+inline int computeCatchupFirstStep(int lastStep, int currentStep, int maxCatchup)
+{
+    int gap = currentStep - lastStep;
+    if (lastStep >= 0 && gap >= 1 && gap <= maxCatchup)
+        return lastStep + 1;
+    return currentStep;
+}
+
 // Gates the *entire track* on/off for the current loopIndex (which pass
 // through the pattern this is -- callers derive it as an absolute step
 // count divided by the pattern length, no separate counter needed). Cheap

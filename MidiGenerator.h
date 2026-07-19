@@ -212,6 +212,21 @@ private:
     // a stuck-note hazard on hosts/synths that don't expect it.
     void KillExistingNote(int noteNumber, int channel);
 
+    // Evaluates and (if it fires) emits one 16th-note step. `absoluteStep` is
+    // the running 16th-note index since transport start -- stepIndex/loopIndex/
+    // rotation-drift/swing all derive from it. Factored out of ProcessBlock so
+    // a single block can drive several steps when it straddles more than one
+    // 16th boundary (high tempo / large buffer), instead of dropping all but
+    // the newest. See ProcessBlock's catch-up loop.
+    void ProcessStep(int absoluteStep, double bpm, double sampleRate);
+
+    // A block can legitimately span a few 16th notes at extreme tempo/buffer
+    // combos (~4 at 300bpm with an 8192-frame buffer), but a jump larger than
+    // this is a transport locate or loop wrap, not a straddle -- catching
+    // those up would fire a burst of notes for time that never really elapsed.
+    // Past this gap, only the current step is played.
+    static constexpr int kMaxCatchupSteps = 8;
+
     // Reseeds `t`'s generative wander (RNG stream, scale degree, Chaos
     // state) to a fresh starting point. Shared by the Reroll message
     // handler (reseeds the live `track`) and batch export (reseeds each

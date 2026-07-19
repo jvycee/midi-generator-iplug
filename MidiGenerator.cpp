@@ -545,124 +545,142 @@ void MidiGenerator::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 
     if (current16thNote != last16thNote && current16thNote >= 0)
     {
+        // Catch up every 16th-note boundary this block crossed, not just the
+        // newest one -- otherwise a block that straddles more than one 16th
+        // (high tempo / large buffer) silently drops the intermediate steps.
+        // Bounded by kMaxCatchupSteps so a transport locate or loop wrap
+        // (which also advances current16thNote, but by far more) plays only
+        // the current step instead of firing a burst of catch-up notes.
+        int firstStep = computeCatchupFirstStep(last16thNote, current16thNote, kMaxCatchupSteps);
+
         last16thNote = current16thNote;
-        int stepIndex = current16thNote % track.steps;
-        int loopIndex = current16thNote / track.steps;
-        int rotationDriftSteps = track.rotationDriftPeriod > 0 ? (current16thNote / track.rotationDriftPeriod) : 0;
-        // !freeze short-circuits before any RNG draw (trig/density/chaos/
-        // probability), so Freeze genuinely pauses the generative state,
-        // not just playback -- whatever's already ringing in activeNotes/
-        // pendingNotes still decays normally below, untouched.
-        if (!freeze && evaluateTrigCondition(track, loopIndex) && evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
+
+        for (int s = firstStep; s <= current16thNote; ++s)
+            ProcessStep(s, bpm, sampleRate);
+    }
+}
+
+void MidiGenerator::ProcessStep(int absoluteStep, double bpm, double sampleRate)
+{
+    int stepIndex = absoluteStep % track.steps;
+    int loopIndex = absoluteStep / track.steps;
+    int rotationDriftSteps = track.rotationDriftPeriod > 0 ? (absoluteStep / track.rotationDriftPeriod) : 0;
+
+    // Bail before any RNG draw (trig/density/chaos/probability) when frozen
+    // or trig-gated, so Freeze genuinely pauses the generative state, not
+    // just playback -- whatever's already ringing in activeNotes/pendingNotes
+    // still decays normally, untouched. Order matters: evaluateStepTrigger has
+    // side effects (advances Chaos/RNG), so the cheap gates must short-circuit
+    // ahead of it, exactly as the original `!freeze && trig && step` did.
+    if (freeze || !evaluateTrigCondition(track, loopIndex) || !evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
+        return;
+
+    applyHarmonyDrift(track);
+    int scaleRoot = scaleDegreeToNote(globalParams.key, globalParams.scaleMode, track.scaleDegree, track.rootNote);
+    NoteSet notes = buildTrackNotes(track, scaleRoot, globalParams.key, globalParams.scaleMode);
+
+    if (globalParams.globalTranspose != 0)
+    {
+        for (int& n : notes) n = foldIntoMidiRange(n + globalParams.globalTranspose);
+        std::sort(notes.begin(), notes.end());
+        notes.count = (int)(std::unique(notes.begin(), notes.end()) - notes.begin());
+    }
+
+    // Global polyphony cap. Voices (chordNotes) already limits a single
+    // hit's chord to at most 6 notes, but with long noteLengthSteps
+    // several hits' chords stack on top of each other while they're
+    // all still ringing -- that's the actual source of more voices
+    // than the Voices knob would suggest. Make room oldest-first
+    // (activeNotes before never-yet-triggered pendingNotes) rather
+    // than just dropping the new hit, so the sequence still feels
+    // continuous instead of periodically going silent.
+    if (notes.count > maxVoices)
+        notes.count = maxVoices;
+
+    int totalVoices = activeNotes.count + pendingNotes.count;
+    while (totalVoices + notes.count > maxVoices && !activeNotes.empty())
+    {
+        IMidiMsg offMsg;
+        offMsg.MakeNoteOffMsg(activeNotes.front().noteNumber, 0, activeNotes.front().channel - 1);
+        SendMidiMsg(offMsg);
+        activeNotes.removeAt(0);
+        --totalVoices;
+    }
+    while (totalVoices + notes.count > maxVoices && !pendingNotes.empty())
+    {
+        pendingNotes.removeAt(0); // never got a note-on, just drop it
+        --totalVoices;
+    }
+
+    double sixteenthNoteSeconds = (60.0 / bpm) * 0.25;
+    int sixteenthNoteSamples = static_cast<int>(sixteenthNoteSeconds * sampleRate);
+    double noteSlotSeconds = sixteenthNoteSeconds * std::max(1, track.noteLengthSteps);
+    int gateSamples = static_cast<int>(noteSlotSeconds * track.gate * sampleRate);
+    // Subtle downward-only velocity humanize: every hit landing at
+    // identically full strength is a big part of what reads as
+    // "stabby" rather than "dreamy" -- real playing (and real pads)
+    // breathe. Never louder than the knob setting, just sometimes
+    // softer, so raising Velocity still sets a reliable ceiling.
+    float humanizedVelocity = track.velocity * (1.0f - randUnit01(track.rngState) * 0.2f);
+    humanizedVelocity = applyAccent(humanizedVelocity, stepIndex, track.accentEvery, track.accentAmount);
+    int velocity = std::max(1, static_cast<int>(humanizedVelocity * 127.0f));
+    int timingOffset = computeTimingOffsetSamples(track, absoluteStep, globalParams, sixteenthNoteSamples);
+
+    // Ratchet: only for hits that resolve to a single note -- see
+    // EuclideanTrack::ratchetCount. Spreads retriggers across up to a
+    // full beat (4 steps) rather than cramming them into a single
+    // 16th note -- confining to one step meant even Ratchet=2
+    // collapsed a multi-second sustained note into ~50ms blips, a
+    // jarring cliff rather than a gradual increase in busyness.
+    // Capped at the note's own length so a short, already-punchy
+    // note isn't stretched wider than it was configured to be.
+    int ratchetCount = std::clamp(track.ratchetCount, 1, 8);
+    bool applyRatchet = ratchetCount > 1 && notes.count == 1;
+    int ratchetSpanSteps = std::min(std::max(1, track.noteLengthSteps), 4);
+    int ratchetSpanSamples = sixteenthNoteSamples * ratchetSpanSteps;
+    int ratchetSliceSamples = std::max(1, ratchetSpanSamples / ratchetCount);
+    int ratchetGateSamples = std::max(1, (int)(ratchetSliceSamples * track.gate));
+
+    SendModCCs();
+
+    for (int note : notes)
+    {
+        // Guard against a stuck note if this pitch is still sounding
+        // (or queued) from an earlier hit -- see KillExistingNote's comment.
+        // Called once here, before scheduling this hit's note(s)/ratchet
+        // burst -- NOT between individual ratchet retriggers below, which
+        // are deliberately sequential and must not cancel each other.
+        KillExistingNote(note, track.midiChannel);
+
+        if (!applyRatchet)
         {
-            applyHarmonyDrift(track);
-            int scaleRoot = scaleDegreeToNote(globalParams.key, globalParams.scaleMode, track.scaleDegree, track.rootNote);
-            NoteSet notes = buildTrackNotes(track, scaleRoot, globalParams.key, globalParams.scaleMode);
-
-            if (globalParams.globalTranspose != 0)
+            if (timingOffset <= 0)
             {
-                for (int& n : notes) n = foldIntoMidiRange(n + globalParams.globalTranspose);
-                std::sort(notes.begin(), notes.end());
-                notes.count = (int)(std::unique(notes.begin(), notes.end()) - notes.begin());
+                IMidiMsg msg;
+                msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
+                SendMidiMsg(msg);
+                activeNotes.push({ note, track.midiChannel, gateSamples });
             }
-
-            // Global polyphony cap. Voices (chordNotes) already limits a single
-            // hit's chord to at most 6 notes, but with long noteLengthSteps
-            // several hits' chords stack on top of each other while they're
-            // all still ringing -- that's the actual source of more voices
-            // than the Voices knob would suggest. Make room oldest-first
-            // (activeNotes before never-yet-triggered pendingNotes) rather
-            // than just dropping the new hit, so the sequence still feels
-            // continuous instead of periodically going silent.
-            if (notes.count > maxVoices)
-                notes.count = maxVoices;
-
-            int totalVoices = activeNotes.count + pendingNotes.count;
-            while (totalVoices + notes.count > maxVoices && !activeNotes.empty())
+            else
             {
-                IMidiMsg offMsg;
-                offMsg.MakeNoteOffMsg(activeNotes.front().noteNumber, 0, activeNotes.front().channel - 1);
-                SendMidiMsg(offMsg);
-                activeNotes.removeAt(0);
-                --totalVoices;
+                pendingNotes.push({ note, track.midiChannel, velocity, timingOffset, gateSamples });
             }
-            while (totalVoices + notes.count > maxVoices && !pendingNotes.empty())
+        }
+        else
+        {
+            for (int r = 0; r < ratchetCount; ++r)
             {
-                pendingNotes.removeAt(0); // never got a note-on, just drop it
-                --totalVoices;
-            }
-
-            double sixteenthNoteSeconds = (60.0 / bpm) * 0.25;
-            int sixteenthNoteSamples = static_cast<int>(sixteenthNoteSeconds * sampleRate);
-            double noteSlotSeconds = sixteenthNoteSeconds * std::max(1, track.noteLengthSteps);
-            int gateSamples = static_cast<int>(noteSlotSeconds * track.gate * sampleRate);
-            // Subtle downward-only velocity humanize: every hit landing at
-            // identically full strength is a big part of what reads as
-            // "stabby" rather than "dreamy" -- real playing (and real pads)
-            // breathe. Never louder than the knob setting, just sometimes
-            // softer, so raising Velocity still sets a reliable ceiling.
-            float humanizedVelocity = track.velocity * (1.0f - randUnit01(track.rngState) * 0.2f);
-            humanizedVelocity = applyAccent(humanizedVelocity, stepIndex, track.accentEvery, track.accentAmount);
-            int velocity = std::max(1, static_cast<int>(humanizedVelocity * 127.0f));
-            int timingOffset = computeTimingOffsetSamples(track, current16thNote, globalParams, sixteenthNoteSamples);
-
-            // Ratchet: only for hits that resolve to a single note -- see
-            // EuclideanTrack::ratchetCount. Spreads retriggers across up to a
-            // full beat (4 steps) rather than cramming them into a single
-            // 16th note -- confining to one step meant even Ratchet=2
-            // collapsed a multi-second sustained note into ~50ms blips, a
-            // jarring cliff rather than a gradual increase in busyness.
-            // Capped at the note's own length so a short, already-punchy
-            // note isn't stretched wider than it was configured to be.
-            int ratchetCount = std::clamp(track.ratchetCount, 1, 8);
-            bool applyRatchet = ratchetCount > 1 && notes.count == 1;
-            int ratchetSpanSteps = std::min(std::max(1, track.noteLengthSteps), 4);
-            int ratchetSpanSamples = sixteenthNoteSamples * ratchetSpanSteps;
-            int ratchetSliceSamples = std::max(1, ratchetSpanSamples / ratchetCount);
-            int ratchetGateSamples = std::max(1, (int)(ratchetSliceSamples * track.gate));
-
-            SendModCCs();
-
-            for (int note : notes)
-            {
-                // Guard against a stuck note if this pitch is still sounding
-                // (or queued) from an earlier hit -- see KillExistingNote's comment.
-                // Called once here, before scheduling this hit's note(s)/ratchet
-                // burst -- NOT between individual ratchet retriggers below, which
-                // are deliberately sequential and must not cancel each other.
-                KillExistingNote(note, track.midiChannel);
-
-                if (!applyRatchet)
+                int onset = timingOffset + r * ratchetSliceSamples;
+                if (r == 0 && onset <= 0)
                 {
-                    if (timingOffset <= 0)
-                    {
-                        IMidiMsg msg;
-                        msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
-                        SendMidiMsg(msg);
-                        activeNotes.push({ note, track.midiChannel, gateSamples });
-                    }
-                    else
-                    {
-                        pendingNotes.push({ note, track.midiChannel, velocity, timingOffset, gateSamples });
-                    }
+                    IMidiMsg msg;
+                    msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
+                    SendMidiMsg(msg);
+                    activeNotes.push({ note, track.midiChannel, ratchetGateSamples });
                 }
                 else
                 {
-                    for (int r = 0; r < ratchetCount; ++r)
-                    {
-                        int onset = timingOffset + r * ratchetSliceSamples;
-                        if (r == 0 && onset <= 0)
-                        {
-                            IMidiMsg msg;
-                            msg.MakeNoteOnMsg(note, velocity, 0, track.midiChannel - 1);
-                            SendMidiMsg(msg);
-                            activeNotes.push({ note, track.midiChannel, ratchetGateSamples });
-                        }
-                        else
-                        {
-                            pendingNotes.push({ note, track.midiChannel, velocity, onset, ratchetGateSamples });
-                        }
-                    }
+                    pendingNotes.push({ note, track.midiChannel, velocity, onset, ratchetGateSamples });
                 }
             }
         }

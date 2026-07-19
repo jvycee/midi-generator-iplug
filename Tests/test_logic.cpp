@@ -243,6 +243,34 @@ static void TestAllScaleIntervalTables()
     }
 }
 
+static void TestCatchupFirstStep()
+{
+    const int cap = 8;
+
+    // First step after transport start/reset (lastStep < 0): current only.
+    CHECK(computeCatchupFirstStep(-1, 8, cap) == 8);
+
+    // Same 16th as last (no advance): the loop [result, current] is a single
+    // step; ProcessBlock's outer guard already skips the unchanged case, but
+    // the helper should still be well-defined (gap 0 -> current only).
+    CHECK(computeCatchupFirstStep(8, 8, cap) == 8);
+
+    // Normal forward advance of 1: no catch-up, just the new step.
+    CHECK(computeCatchupFirstStep(5, 6, cap) == 6);
+
+    // Forward straddle of several 16ths: catch up from just after last.
+    CHECK(computeCatchupFirstStep(5, 8, cap) == 6);
+
+    // Exactly at the cap: still caught up.
+    CHECK(computeCatchupFirstStep(5, 5 + cap, cap) == 6);
+
+    // One past the cap (a locate, not a straddle): current only.
+    CHECK(computeCatchupFirstStep(5, 6 + cap, cap) == 6 + cap);
+
+    // Backward jump (loop wrap / rewind): current only, never a negative range.
+    CHECK(computeCatchupFirstStep(8, 2, cap) == 2);
+}
+
 static void TestMidiExportProducesAFile()
 {
     GlobalParams gp;
@@ -381,6 +409,7 @@ int main()
     TestAccent();
     TestScaleQuantization();
     TestAllScaleIntervalTables();
+    TestCatchupFirstStep();
     TestMidiExportProducesAFile();
     TestRatchet();
     TestExportNoSamePitchOverlap();
