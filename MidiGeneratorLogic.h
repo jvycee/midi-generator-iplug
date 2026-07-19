@@ -579,15 +579,27 @@ struct GlobalParams
 //==============================================================================
 inline void rebuildTrackPattern(EuclideanTrack& t)
 {
-    t.patternBits = computeEuclidean(t.pulses, t.steps);
-    t.patternBits = rotatePattern(t.patternBits, t.steps, t.rotation);
+    // Build the whole pattern in a local and publish it to patternBits in a
+    // single store at the end. This runs on the UI thread (from
+    // OnParamChange) while the audio thread reads patternBits in
+    // evaluateStepTrigger; writing it in stages (compute -> rotate -> invert)
+    // would let a reader observe an intermediate, un-rotated pattern for one
+    // step. A single aligned 32-bit store is seen whole -- the reader gets
+    // either the old or the new complete pattern, never a half-built one.
+    // (Fully memory-model-correct would make patternBits std::atomic, but that
+    // ripples into the single-threaded test/export readers for no practical
+    // gain on the platforms this targets, where the aligned store is atomic.)
+    uint32_t bits = computeEuclidean(t.pulses, t.steps);
+    bits = rotatePattern(bits, t.steps, t.rotation);
 
     if (t.patternInvert)
     {
         int steps = std::clamp(t.steps, 0, 32);
         uint32_t mask = (steps >= 32) ? 0xFFFFFFFFu : ((1u << steps) - 1u);
-        t.patternBits = (~t.patternBits) & mask;
+        bits = (~bits) & mask;
     }
+
+    t.patternBits = bits;
 }
 
 // Given the last-processed 16th-note index and the current one, returns the
