@@ -468,8 +468,57 @@ void Drift::KillExistingNote(int noteNumber, int channel)
     }
 }
 
+int Drift::CountSoundingVoices() const
+{
+    // Bit per (pitch, channel): 128 pitches x 16 channels. Stack-only, O(n).
+    uint16_t seen[128] = {};
+    int voices = 0;
+
+    auto tally = [&](int noteNumber, int channel)
+    {
+        int pitch = noteNumber & 0x7F;
+        uint16_t bit = (uint16_t)(1u << ((channel - 1) & 0x0F));
+        if (!(seen[pitch] & bit))
+        {
+            seen[pitch] |= bit;
+            ++voices;
+        }
+    };
+
+    for (int i = 0; i < activeNotes.count; ++i)
+        tally(activeNotes.items[i].noteNumber, activeNotes.items[i].channel);
+    for (int i = 0; i < pendingNotes.count; ++i)
+        tally(pendingNotes.items[i].noteNumber, pendingNotes.items[i].channel);
+
+    return voices;
+}
+
 void Drift::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
+    // Note-offs BEFORE note-ons -- the classic sequencer ordering rule, and
+    // it matters here twice over:
+    //  1. When a ratchet slice's off and the next slice's on both come due in
+    //     the same buffer, firing the on first let the old same-pitch entry's
+    //     off (sent a moment later) kill the just-started retrigger.
+    //  2. Notes fired from pending used to be pushed into activeNotes and
+    //     then immediately decremented by this same block's active pass,
+    //     silently shaving up to a buffer's length off every delayed note's
+    //     gate. With offs processed first, a note fired below starts aging
+    //     next block, as intended.
+    for (int i = 0; i < activeNotes.count; )
+    {
+        ActiveNote& a = activeNotes.items[i];
+        a.samplesRemaining -= nFrames;
+        if (a.samplesRemaining <= 0)
+        {
+            IMidiMsg msg;
+            msg.MakeNoteOffMsg(a.noteNumber, 0, a.channel - 1);
+            SendMidiMsg(msg);
+            activeNotes.removeAt(i);
+        }
+        else ++i;
+    }
+
     for (int i = 0; i < pendingNotes.count; )
     {
         PendingNote& p = pendingNotes.items[i];
@@ -481,20 +530,6 @@ void Drift::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
             SendMidiMsg(msg);
             activeNotes.push({ p.noteNumber, p.channel, p.gateSamples });
             pendingNotes.removeAt(i);
-        }
-        else ++i;
-    }
-
-    for (int i = 0; i < activeNotes.count; )
-    {
-        ActiveNote& a = activeNotes.items[i];
-        a.samplesRemaining -= nFrames;
-        if (a.samplesRemaining <= 0)
-        {
-            IMidiMsg msg;
-            msg.MakeNoteOffMsg(a.noteNumber, 0, a.channel - 1);
-            SendMidiMsg(msg);
-            activeNotes.removeAt(i);
         }
         else ++i;
     }
@@ -599,19 +634,22 @@ void Drift::ProcessStep(int absoluteStep, double bpm, double sampleRate)
     if (notes.count > maxVoices)
         notes.count = maxVoices;
 
-    int totalVoices = activeNotes.count + pendingNotes.count;
-    while (totalVoices + notes.count > maxVoices && !activeNotes.empty())
+    // Compare DISTINCT sounding/queued voices against the cap, not raw list
+    // sizes -- a ratchet burst queues up to 8 same-pitch pending entries that
+    // sound one-at-a-time, so raw counts overstated polyphony and made this
+    // loop steal ringing notes that never needed to go. Recompute per
+    // iteration: removing an entry only frees a voice if it was that pitch's
+    // last instance. Bounded (lists are fixed 64) and allocation-free.
+    while (CountSoundingVoices() + notes.count > maxVoices && !activeNotes.empty())
     {
         IMidiMsg offMsg;
         offMsg.MakeNoteOffMsg(activeNotes.front().noteNumber, 0, activeNotes.front().channel - 1);
         SendMidiMsg(offMsg);
         activeNotes.removeAt(0);
-        --totalVoices;
     }
-    while (totalVoices + notes.count > maxVoices && !pendingNotes.empty())
+    while (CountSoundingVoices() + notes.count > maxVoices && !pendingNotes.empty())
     {
         pendingNotes.removeAt(0); // never got a note-on, just drop it
-        --totalVoices;
     }
 
     double sixteenthNoteSeconds = (60.0 / bpm) * 0.25;

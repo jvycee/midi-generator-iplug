@@ -183,10 +183,12 @@ private:
     // Playback tracking
     int last16thNote = -1;
 
-    // Keep track of active notes for Note Offs. kMaxVoiceSlots is double
-    // kParamMaxVoices's ceiling of 16, so the polyphony cap below always
-    // leaves headroom and push() never has to silently drop a note.
-    static constexpr int kMaxVoiceSlots = 32;
+    // Keep track of active notes for Note Offs. Sized well past
+    // kParamMaxVoices's ceiling of 16 because pendingNotes doesn't just hold
+    // voices: a ratchet burst queues up to 8 slice entries per hit, and with
+    // bursts spanning up to 4 steps, several bursts' slices can be queued at
+    // once -- 64 slots keeps push() from ever silently dropping a retrigger.
+    static constexpr int kMaxVoiceSlots = 64;
 
     struct ActiveNote {
         int noteNumber;
@@ -211,6 +213,15 @@ private:
     // channel) -- which harmony drift or a voicing change can produce -- is
     // a stuck-note hazard on hosts/synths that don't expect it.
     void KillExistingNote(int noteNumber, int channel);
+
+    // How many *distinct* (pitch, channel) voices are sounding or queued.
+    // This -- not activeNotes.count + pendingNotes.count -- is what the
+    // polyphony cap must compare against: a ratchet burst queues up to 8
+    // same-pitch pending entries that sound strictly one-at-a-time, so raw
+    // list counts wildly overstate polyphony and made the steal loop kill
+    // ringing notes that never needed to go. Allocation-free (stack bitmask),
+    // O(n) over two small fixed lists -- fine on the audio thread.
+    int CountSoundingVoices() const;
 
     // Evaluates and (if it fires) emits one 16th-note step. `absoluteStep` is
     // the running 16th-note index since transport start -- stepIndex/loopIndex/

@@ -396,6 +396,53 @@ static void TestExportNoSamePitchOverlap()
     CHECK(noteOnCount == 16); // 1 bar * 16 steps, every step fires, mono
 }
 
+static void TestExportRatchetOverlapClean()
+{
+    GlobalParams gp; // no swing, hard clock
+    ModSlot slots[1];
+
+    // Worst-case ratchet overlap: every 16th fires (steps=pulses=1), mono, a
+    // long note so the ratchet span caps at a full beat (4 steps), ratchet 8.
+    // Each burst's slices reach 3 steps past its own step, so at any moment
+    // several bursts' queued slices coexist -- exactly the shape that used to
+    // produce (a) off-before-on orphans when a new burst cancelled a future
+    // slice by truncation, and (b) bogus voice-stealing when queued slices
+    // were counted as simultaneous voices.
+    EuclideanTrack track;
+    track.steps = 1;
+    track.pulses = 1;
+    track.monoMode = true;
+    track.driftAmount = 0.0f;
+    track.noteLengthSteps = 64;
+    track.ratchetCount = 8;
+    rebuildTrackPattern(track);
+
+    auto smf = MidiExport::renderPatternToSMF(track, gp, 120.0, 2, slots, 0, 8);
+    auto notes = parseNoteEvents(smf);
+    CHECK(!notes.empty());
+
+    // Walking in file order (offs sort before ons at equal ticks), the single
+    // pitch must strictly alternate: an on while already sounding is an
+    // overlap; an off while silent is an orphan (its on was cancelled but the
+    // off survived, or vice versa).
+    bool sounding[128] = {};
+    bool overlap = false, orphanOff = false;
+    int ons = 0;
+    for (const auto& e : notes) {
+        if (e.on) {
+            if (sounding[e.pitch]) overlap = true;
+            sounding[e.pitch] = true;
+            ++ons;
+        } else {
+            if (!sounding[e.pitch]) orphanOff = true;
+            sounding[e.pitch] = false;
+        }
+    }
+    CHECK(!overlap);
+    CHECK(!orphanOff);
+    CHECK(ons > 0);
+}
+
 int main()
 {
     TestEuclideanPatterns();
@@ -413,6 +460,7 @@ int main()
     TestMidiExportProducesAFile();
     TestRatchet();
     TestExportNoSamePitchOverlap();
+    TestExportRatchetOverlapClean();
 
     if (gFailures == 0)
         std::printf("All tests passed.\n");

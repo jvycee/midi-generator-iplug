@@ -61,17 +61,22 @@ struct RawEvent
     uint32_t tick;
     int priority; // tie-break at equal tick: CC(0) < NoteOff(1) < NoteOn(2) -- avoids stuck notes
     std::vector<uint8_t> bytes;
+    bool deleted = false; // a cancelled not-yet-started note; filtered out before writing
 };
 
-// A currently-"sounding" note in the offline simulation below, tracking the
-// index of its (already-queued) note-off RawEvent so a later voice-steal (or
-// a same-pitch retrigger) can truncate that event's tick in place -- mirrors
-// ProcessBlock's activeNotes list, just offline. noteNumber lets us find the
-// still-sounding instance of a pitch about to be re-triggered, which is the
-// offline equivalent of ProcessBlock's KillExistingNote().
+// A scheduled note in the offline simulation below -- the offline mirror of
+// BOTH of ProcessBlock's lists at once. With ratchet, a hit queues slices
+// whose note-ons lie in the *future* relative to later steps' processing, so
+// an entry here may be "sounding" (onTick in the past: mirrors activeNotes)
+// or "queued" (onTick not reached yet: mirrors pendingNotes). The distinction
+// decides how a voice-steal or same-pitch retrigger must cancel it -- see
+// cancelTrackedNote in renderPatternToSMF. Event indices let cancellation
+// edit the already-queued events in place.
 struct TrackedNote
 {
+    uint32_t onTick;
     uint32_t offTick;
+    size_t onEventIndex;
     size_t offEventIndex;
     int noteNumber;
 };
@@ -146,46 +151,80 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
                 { (uint8_t)(0xB0 | channel), (uint8_t)(slot.ccNumber & 0x7F), data2 } });
         }
 
-        // Global polyphony cap, mirroring ProcessBlock exactly: expire
-        // naturally-ended notes, trim an oversized chord to maxVoices, then
-        // steal the oldest still-sounding notes (truncating their already-
-        // queued note-off to right now) if there still isn't room.
+        // Cancels a tracked note "as of tick `now`", mirroring what live
+        // playback does in KillExistingNote / the steal loop:
+        //  - already started (onTick < now): truncate its note-off to `now`
+        //    (the live equivalent of sending an immediate note-off).
+        //  - not started yet (onTick >= now, a queued ratchet slice): DELETE
+        //    both its events (the live equivalent of dropping a pendingNote).
+        //    Truncating those instead used to write the off *before* the
+        //    note's own on -- an off-before-on orphan the sort then placed
+        //    ahead of the on, leaving a stuck note in the .mid.
+        auto cancelTrackedNote = [&](const TrackedNote& t, uint32_t now)
+        {
+            if (t.onTick >= now)
+            {
+                events[t.onEventIndex].deleted = true;
+                events[t.offEventIndex].deleted = true;
+            }
+            else
+            {
+                events[t.offEventIndex].tick = now;
+            }
+        };
+
+        // Distinct pitches among tracked notes -- the offline mirror of
+        // Drift::CountSoundingVoices. Raw tracked.size() counts every queued
+        // ratchet slice, overstating polyphony (they sound one-at-a-time).
+        auto countDistinctPitches = [&]() -> int
+        {
+            bool seen[128] = {};
+            int voices = 0;
+            for (const TrackedNote& t : tracked)
+                if (!seen[t.noteNumber & 0x7F]) { seen[t.noteNumber & 0x7F] = true; ++voices; }
+            return voices;
+        };
+
+        // Global polyphony cap, mirroring ProcessBlock: expire naturally-
+        // ended notes, trim an oversized chord to maxVoices, then cancel the
+        // oldest scheduled notes if there still isn't room.
         tracked.erase(std::remove_if(tracked.begin(), tracked.end(),
             [onTick](const TrackedNote& t) { return t.offTick <= (uint32_t)onTick; }), tracked.end());
 
         if (notes.count > maxVoices)
             notes.count = maxVoices;
 
-        while ((int)tracked.size() + notes.count > maxVoices && !tracked.empty())
+        while (countDistinctPitches() + notes.count > maxVoices && !tracked.empty())
         {
-            events[tracked.front().offEventIndex].tick = (uint32_t)onTick;
+            cancelTrackedNote(tracked.front(), (uint32_t)onTick);
             tracked.erase(tracked.begin());
         }
 
         // Emits one note-on/off pair for pitch `n` starting at `on`, first
-        // truncating any still-sounding earlier instance of the same pitch to
-        // `on` -- the offline equivalent of ProcessBlock's KillExistingNote,
-        // so the exported file never stacks two overlapping note-ons of the
-        // same pitch (a DAW would import that as messy duplicate notes). With
-        // the default 32-step note length, successive hits almost always
-        // overlap, and repeated/shared pitches are common, so without this the
-        // export routinely diverges from what the live engine plays.
+        // cancelling any earlier scheduled instance of the same pitch -- the
+        // offline equivalent of ProcessBlock's KillExistingNote, so the
+        // exported file never stacks two overlapping note-ons of the same
+        // pitch (a DAW would import that as messy duplicate notes). With the
+        // default 32-step note length, successive hits almost always overlap,
+        // and repeated/shared pitches are common, so without this the export
+        // routinely diverges from what the live engine plays.
         auto emitNote = [&](uint8_t n, uint32_t on, uint32_t off)
         {
             for (auto it = tracked.begin(); it != tracked.end(); )
             {
                 if (it->noteNumber == n && it->offTick > on)
                 {
-                    events[it->offEventIndex].tick = on; // release the old instance exactly as the new one starts
+                    cancelTrackedNote(*it, on);
                     it = tracked.erase(it);
                 }
                 else ++it;
             }
 
+            size_t onIdx = events.size();
             events.push_back({ on, 2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
             size_t offIdx = events.size();
             events.push_back({ off, 1, { (uint8_t)(0x80 | channel), n, 0 } });
-            tracked.push_back({ off, offIdx, (int)n });
+            tracked.push_back({ on, off, onIdx, offIdx, (int)n });
         };
 
         for (int note : notes)
@@ -207,6 +246,11 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
             }
         }
     }
+
+    // Drop cancelled never-started notes (see cancelTrackedNote) before
+    // ordering -- they must not appear in the file at all.
+    events.erase(std::remove_if(events.begin(), events.end(),
+        [](const RawEvent& e) { return e.deleted; }), events.end());
 
     std::stable_sort(events.begin(), events.end(), [](const RawEvent& a, const RawEvent& b) {
         if (a.tick != b.tick) return a.tick < b.tick;
