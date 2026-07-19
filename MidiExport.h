@@ -64,13 +64,16 @@ struct RawEvent
 };
 
 // A currently-"sounding" note in the offline simulation below, tracking the
-// index of its (already-queued) note-off RawEvent so a later voice-steal can
-// truncate that event's tick in place -- mirrors ProcessBlock's activeNotes
-// list, just offline.
+// index of its (already-queued) note-off RawEvent so a later voice-steal (or
+// a same-pitch retrigger) can truncate that event's tick in place -- mirrors
+// ProcessBlock's activeNotes list, just offline. noteNumber lets us find the
+// still-sounding instance of a pitch about to be re-triggered, which is the
+// offline equivalent of ProcessBlock's KillExistingNote().
 struct TrackedNote
 {
     uint32_t offTick;
     size_t offEventIndex;
+    int noteNumber;
 };
 
 // Renders `numBars` bars of `track`'s pattern under `globalParams`/`bpm` as a
@@ -159,16 +162,39 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
             tracked.erase(tracked.begin());
         }
 
+        // Emits one note-on/off pair for pitch `n` starting at `on`, first
+        // truncating any still-sounding earlier instance of the same pitch to
+        // `on` -- the offline equivalent of ProcessBlock's KillExistingNote,
+        // so the exported file never stacks two overlapping note-ons of the
+        // same pitch (a DAW would import that as messy duplicate notes). With
+        // the default 32-step note length, successive hits almost always
+        // overlap, and repeated/shared pitches are common, so without this the
+        // export routinely diverges from what the live engine plays.
+        auto emitNote = [&](uint8_t n, uint32_t on, uint32_t off)
+        {
+            for (auto it = tracked.begin(); it != tracked.end(); )
+            {
+                if (it->noteNumber == n && it->offTick > on)
+                {
+                    events[it->offEventIndex].tick = on; // release the old instance exactly as the new one starts
+                    it = tracked.erase(it);
+                }
+                else ++it;
+            }
+
+            events.push_back({ on, 2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
+            size_t offIdx = events.size();
+            events.push_back({ off, 1, { (uint8_t)(0x80 | channel), n, 0 } });
+            tracked.push_back({ off, offIdx, (int)n });
+        };
+
         for (int note : notes)
         {
             uint8_t n = (uint8_t)std::min(127, std::max(0, note));
 
             if (!applyRatchet)
             {
-                events.push_back({ (uint32_t)onTick,  2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
-                size_t offIdx = events.size();
-                events.push_back({ (uint32_t)offTick, 1, { (uint8_t)(0x80 | channel), n, 0 } });
-                tracked.push_back({ (uint32_t)offTick, offIdx });
+                emitNote(n, (uint32_t)onTick, (uint32_t)offTick);
             }
             else
             {
@@ -176,10 +202,7 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
                 {
                     uint32_t rOnTick = (uint32_t)(onTick + r * ratchetSliceTicks);
                     uint32_t rOffTick = rOnTick + (uint32_t)ratchetGateTicks;
-                    events.push_back({ rOnTick,  2, { (uint8_t)(0x90 | channel), n, (uint8_t)velocity } });
-                    size_t offIdx = events.size();
-                    events.push_back({ rOffTick, 1, { (uint8_t)(0x80 | channel), n, 0 } });
-                    tracked.push_back({ rOffTick, offIdx });
+                    emitNote(n, rOnTick, rOffTick);
                 }
             }
         }

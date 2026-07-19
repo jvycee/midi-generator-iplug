@@ -433,24 +433,36 @@ void MidiGenerator::SendModCCs()
 
 void MidiGenerator::KillExistingNote(int noteNumber, int channel)
 {
-    for (int i = 0; i < activeNotes.count; ++i)
+    // Remove *every* still-sounding/queued instance of this (pitch, channel),
+    // not just the first. A ratchet burst pushes several same-pitch entries
+    // at once, so the old "unique by construction, break after one" assumption
+    // no longer holds -- stopping at the first match would orphan the rest,
+    // leaving them to fire spurious note-ons/offs later (a stuck-note hazard).
+    // One note-off releases the pitch regardless of how many note-ons went
+    // out; the point of the loop is to clean up our own bookkeeping so no
+    // leftover entry emits a stray event.
+    bool killedActive = false;
+    for (int i = 0; i < activeNotes.count; )
     {
         if (activeNotes.items[i].noteNumber == noteNumber && activeNotes.items[i].channel == channel)
         {
-            IMidiMsg off;
-            off.MakeNoteOffMsg(noteNumber, 0, channel - 1);
-            SendMidiMsg(off);
             activeNotes.removeAt(i);
-            break; // (pitch, channel) is unique among active notes by construction
+            killedActive = true;
         }
+        else ++i;
     }
-    for (int i = 0; i < pendingNotes.count; ++i)
+    if (killedActive)
+    {
+        IMidiMsg off;
+        off.MakeNoteOffMsg(noteNumber, 0, channel - 1);
+        SendMidiMsg(off);
+    }
+
+    for (int i = 0; i < pendingNotes.count; )
     {
         if (pendingNotes.items[i].noteNumber == noteNumber && pendingNotes.items[i].channel == channel)
-        {
             pendingNotes.removeAt(i); // never got a note-on, just drop it
-            break;
-        }
+        else ++i;
     }
 }
 

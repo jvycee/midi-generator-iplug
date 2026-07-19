@@ -283,6 +283,91 @@ static void TestRatchet()
     CHECK(bytesWithRatchet.size() > bytesNoRatchet.size());
 }
 
+// Minimal parser for the format-0 SMF renderPatternToSMF emits: pulls out
+// (absoluteTick, isNoteOn, pitch) for every note event. The exporter always
+// writes explicit status bytes (no running status), so this stays simple.
+// Lets tests assert structural properties a raw byte-size check can't.
+struct ParsedNote { uint32_t tick; bool on; int pitch; };
+
+static std::vector<ParsedNote> parseNoteEvents(const std::vector<uint8_t>& smf)
+{
+    std::vector<ParsedNote> out;
+    auto readVarLen = [&](size_t& p) -> uint32_t {
+        uint32_t v = 0;
+        while (p < smf.size()) {
+            uint8_t b = smf[p++];
+            v = (v << 7) | (b & 0x7F);
+            if (!(b & 0x80)) break;
+        }
+        return v;
+    };
+    // Skip MThd (14 bytes) + MTrk header (8 bytes); track data starts at 22.
+    size_t i = 22;
+    uint32_t tick = 0;
+    while (i < smf.size()) {
+        tick += readVarLen(i);
+        if (i >= smf.size()) break;
+        uint8_t status = smf[i++];
+        if (status == 0xFF) {                 // meta
+            if (i >= smf.size()) break;
+            uint8_t type = smf[i++];
+            uint32_t len = readVarLen(i);
+            if (type == 0x2F) break;           // End of Track
+            i += len;
+        } else if ((status & 0xF0) == 0x90) {  // note-on
+            uint8_t note = smf[i++]; uint8_t vel = smf[i++];
+            out.push_back({ tick, vel > 0, (int)note });
+        } else if ((status & 0xF0) == 0x80) {  // note-off
+            uint8_t note = smf[i++]; i++;      // skip velocity
+            out.push_back({ tick, false, (int)note });
+        } else if ((status & 0xF0) == 0xB0) {  // CC
+            i += 2;
+        } else {
+            break;                             // unexpected -- bail rather than misparse
+        }
+    }
+    return out;
+}
+
+static void TestExportNoSamePitchOverlap()
+{
+    GlobalParams gp; // defaults: no swing, hard clock -> onTick lands exactly on the grid
+    ModSlot slots[1];
+
+    // Mono mode with drift off makes every hit the exact same pitch, and the
+    // default 32-step note length far outlasts the 1-step spacing -- so
+    // WITHOUT the same-pitch truncation this stacks 16 overlapping note-ons of
+    // one pitch. Every step fires (pulses == steps).
+    EuclideanTrack track;
+    track.steps = 4;
+    track.pulses = 4;
+    track.monoMode = true;
+    track.driftAmount = 0.0f;
+    rebuildTrackPattern(track);
+
+    auto smf = MidiExport::renderPatternToSMF(track, gp, 120.0, 1, slots, 0, 8);
+    auto notes = parseNoteEvents(smf);
+    CHECK(!notes.empty());
+
+    // Walk events in tick/priority order (already sorted by the exporter, with
+    // note-off before note-on at equal tick). A note-on for a pitch already
+    // sounding is an illegal overlap.
+    bool sounding[128] = {};
+    bool overlap = false;
+    int noteOnCount = 0;
+    for (const auto& e : notes) {
+        if (e.on) {
+            if (sounding[e.pitch]) overlap = true;
+            sounding[e.pitch] = true;
+            ++noteOnCount;
+        } else {
+            sounding[e.pitch] = false;
+        }
+    }
+    CHECK(!overlap);
+    CHECK(noteOnCount == 16); // 1 bar * 16 steps, every step fires, mono
+}
+
 int main()
 {
     TestEuclideanPatterns();
@@ -298,6 +383,7 @@ int main()
     TestAllScaleIntervalTables();
     TestMidiExportProducesAFile();
     TestRatchet();
+    TestExportNoSamePitchOverlap();
 
     if (gFailures == 0)
         std::printf("All tests passed.\n");
