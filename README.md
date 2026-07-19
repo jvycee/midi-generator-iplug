@@ -1,4 +1,4 @@
-# MidiGenerator
+# Drift
 
 A generative MIDI effect built on [iPlug2](https://iplug2.github.io/). It doesn't make sound itself -- it generates note, CC, and clock data for a synth or DAW downstream.
 

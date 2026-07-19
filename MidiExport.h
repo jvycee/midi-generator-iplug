@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MidiGeneratorLogic.h"
+#include "DriftLogic.h"
 #include <vector>
 #include <cstdint>
 #include <cstdio>
@@ -18,7 +18,7 @@
 // the exported file straight onto a DAW's arrange/piano-roll view (e.g.
 // Logic Pro) to drop it in as a real, editable MIDI region.
 //
-// Pure C++, no iPlug2/IGraphics dependency beyond MidiGeneratorLogic.h, so
+// Pure C++, no iPlug2/IGraphics dependency beyond DriftLogic.h, so
 // it's testable standalone.
 //==============================================================================
 namespace MidiExport

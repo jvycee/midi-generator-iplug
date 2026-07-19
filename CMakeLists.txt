@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(MidiGenerator VERSION 1.0.0)
+project(Drift VERSION 1.0.0)
 
 if(NOT DEFINED IPLUG2_DIR)
   set(IPLUG2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." CACHE PATH "iPlug2 root directory")
@@ -10,9 +10,9 @@ find_package(iPlug2 REQUIRED)
 
 iplug_add_plugin(${PROJECT_NAME}
   SOURCES
-    MidiGenerator.cpp
-    MidiGenerator.h
-    MidiGenerator_DSP.h
+    Drift.cpp
+    Drift.h
+    Drift_DSP.h
     resources/resource.h
   RESOURCES
     resources/fonts/Roboto-Regular.ttf

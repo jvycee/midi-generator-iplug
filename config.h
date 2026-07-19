@@ -1,4 +1,4 @@
-#define PLUG_NAME "MidiGenerator"
+#define PLUG_NAME "Drift"
 #define PLUG_MFR "Jvycee"
 #define PLUG_VERSION_HEX 0x00010000
 #define PLUG_VERSION_STR "1.0.0"
@@ -7,14 +7,14 @@
 #define PLUG_URL_STR "https://iplug2.github.io"
 #define PLUG_EMAIL_STR "spam@me.com"
 #define PLUG_COPYRIGHT_STR "Copyright 2025 Acme Inc"
-#define PLUG_CLASS_NAME MidiGenerator
+#define PLUG_CLASS_NAME Drift
 
-#define BUNDLE_NAME "MidiGenerator"
+#define BUNDLE_NAME "Drift"
 #define BUNDLE_MFR "Jvycee"
 #define BUNDLE_DOMAIN "com"
 
 #define PLUG_CHANNEL_IO "0-2"
-#define SHARED_RESOURCES_SUBPATH "MidiGenerator"
+#define SHARED_RESOURCES_SUBPATH "Drift"
 
 #define PLUG_LATENCY 0
 #define PLUG_TYPE 2
@@ -29,15 +29,15 @@
 #define PLUG_SHARED_RESOURCES 0
 #define PLUG_HOST_RESIZE 0
 
-#define AUV2_ENTRY MidiGenerator_Entry
-#define AUV2_ENTRY_STR "MidiGenerator_Entry"
-#define AUV2_FACTORY MidiGenerator_Factory
-#define AUV2_VIEW_CLASS MidiGenerator_View
-#define AUV2_VIEW_CLASS_STR "MidiGenerator_View"
+#define AUV2_ENTRY Drift_Entry
+#define AUV2_ENTRY_STR "Drift_Entry"
+#define AUV2_FACTORY Drift_Factory
+#define AUV2_VIEW_CLASS Drift_View
+#define AUV2_VIEW_CLASS_STR "Drift_View"
 
 #define AAX_TYPE_IDS 'IPI1', 'IPI2'
 #define AAX_PLUG_MFR_STR "Acme"
-#define AAX_PLUG_NAME_STR "MidiGenerator\nIPIS"
+#define AAX_PLUG_NAME_STR "Drift\nIPIS"
 #define AAX_DOES_AUDIOSUITE 0
 #define AAX_PLUG_CATEGORY_STR "Synth"
 

@@ -1,4 +1,4 @@
-// Regression tests for MidiGeneratorLogic.h / MidiExport.h -- the parts of
+// Regression tests for DriftLogic.h / MidiExport.h -- the parts of
 // this plugin documented as "no iPlug2 dependency, testable standalone."
 // Deliberately dependency-free: no CMake, no test framework, just clang++
 // and a handful of checks. Run via ./run_tests.sh.
@@ -6,7 +6,7 @@
 // Uses explicit checks rather than assert() so failures are still caught in
 // a Release-style build (assert() is a no-op under NDEBUG).
 
-#include "../MidiGeneratorLogic.h"
+#include "../DriftLogic.h"
 #include "../MidiExport.h"
 #include <cstdio>
 

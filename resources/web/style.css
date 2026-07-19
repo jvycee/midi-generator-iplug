@@ -397,7 +397,7 @@ html, body {
 .drag-icon { font-size: 12px; }
 
 /* Momentary feedback once C++ confirms the .mid actually finished rendering
-   (MidiGenerator::OnMessage msgTag 101/102) -- the click alone doesn't mean
+   (Drift::OnMessage msgTag 101/102) -- the click alone doesn't mean
    the file exists yet, so this is driven by that ack, not the click.
    --success/--danger aren't in the source kit (see the :root comment) --
    ready/failed need to read as distinct from the default blue action state

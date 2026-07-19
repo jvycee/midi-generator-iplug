@@ -65,7 +65,7 @@ END
 
 IDD_DIALOG_MAIN DIALOG 0, 0, 300, 300
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "MidiGenerator"
+CAPTION "Drift"
 MENU IDR_MENU1
 FONT 8, "MS Sans Serif"
 BEGIN
@@ -164,7 +164,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON1               ICON                    "MidiGenerator.ico"
+IDI_ICON1               ICON                    "Drift.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -207,9 +207,9 @@ BEGIN
         BEGIN
             VALUE "FileVersion", "0.0.1"
             VALUE "ProductVersion", "0.0.1"
-            VALUE "FileDescription", "MidiGenerator"
-            VALUE "InternalName", "MidiGenerator"
-            VALUE "ProductName", "MidiGenerator"
+            VALUE "FileDescription", "Drift"
+            VALUE "InternalName", "Drift"
+            VALUE "ProductName", "Drift"
             VALUE "CompanyName", "Jvycee"
             VALUE "LegalCopyright", "Copyright 2020 Acme Inc"
             VALUE "LegalTrademarks", "VST is a trademark of Steinberg Media Technologies GmbH, Audio Unit is a trademark of Apple, Inc."

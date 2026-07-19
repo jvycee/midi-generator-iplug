@@ -1,7 +1,7 @@
-// app.js — UI logic for MidiGenerator v2. Talks to the host exclusively
+// app.js — UI logic for Drift v2. Talks to the host exclusively
 // through the bridge functions defined in iplug.js (SPVFUI/BPCFUI/EPCFUI).
 //
-// Param order here MUST match EParams in MidiGenerator.h exactly -- indices
+// Param order here MUST match EParams in Drift.h exactly -- indices
 // are positional, not name-based, on the C++ side.
 
 const PARAMS = [
@@ -617,7 +617,7 @@ function showView(name) {
 // on dragstart and the OS treats the drag as if it originated from a real
 // file. It's the same mechanism sites like Gmail use for "drag this
 // attachment to your desktop." Unverified against a real DAW from this
-// environment -- the Finder-reveal fallback (MidiGenerator.cpp's OnMessage)
+// environment -- the Finder-reveal fallback (Drift.cpp's OnMessage)
 // still fires unconditionally, so nothing regresses if this doesn't pan out.
 // ==========================================================================
 
@@ -655,7 +655,7 @@ function onExportDragStart(e) {
 }
 
 // Reseeds the generative wander (RNG, Chaos state, harmony position) to a
-// fresh starting point -- see MidiGenerator::OnMessage. Fire-and-forget, no
+// fresh starting point -- see Drift::OnMessage. Fire-and-forget, no
 // success/fail round trip needed the way export has one.
 function requestReroll() {
   SAMFUI(104 /* msgTag: reroll request, arbitrary constant agreed with C++ */);
@@ -665,7 +665,7 @@ function requestReroll() {
 }
 
 // Called from OnMessage() below once the C++ side confirms the render
-// actually finished (SendArbitraryMsgFromDelegate(101/102), MidiGenerator.cpp
+// actually finished (SendArbitraryMsgFromDelegate(101/102), Drift.cpp
 // OnMessage) -- the click alone doesn't mean the file exists yet. `filePath`
 // is only present on success (101); see onExportDragStart above.
 function onExportResult(success, filePath) {
@@ -796,7 +796,7 @@ function OnControlMessage(ctrlTag, msgTag, msg) {}
 function OnMidiMsg(statusByte, d1, d2) {}
 
 // The PARAMS array above is positional, not name-based -- it has to match
-// EParams in MidiGenerator.h index-for-index (see the comment at the top of
+// EParams in Drift.h index-for-index (see the comment at the top of
 // this file). Nothing on the C++ side enforces that; if the two ever drift
 // (a param inserted/removed/reordered on one side and not the other), every
 // knob below the drift point silently controls the wrong parameter. The
@@ -809,7 +809,7 @@ function checkParamRegistrySync(hostParams) {
   if (hostParams.length !== PARAMS.length) {
     console.error(
       `[app.js] PARAM REGISTRY MISMATCH: host reports ${hostParams.length} params, ` +
-      `local PARAMS array has ${PARAMS.length}. EParams in MidiGenerator.h and the ` +
+      `local PARAMS array has ${PARAMS.length}. EParams in Drift.h and the ` +
       `PARAMS array in app.js have drifted -- every control is likely bound to the wrong parameter.`
     );
   }
@@ -824,7 +824,7 @@ function OnMessage(msgTag, dataSize, data) {
     } catch (e) { /* ignore */ }
   } else if (msgTag === 101) {
     // data is the raw exported file's absolute path (not base64-JSON like
-    // msgTag -1/103 -- see MidiGenerator.cpp's OnMessage, which sends the
+    // msgTag -1/103 -- see Drift.cpp's OnMessage, which sends the
     // WDL_String's raw bytes directly). SendArbitraryMsgFromDelegate always
     // base64-encodes the payload regardless of what it semantically is, so
     // this still needs the same atob() decode.
@@ -834,7 +834,7 @@ function OnMessage(msgTag, dataSize, data) {
   } else if (msgTag === 102) {
     onExportResult(false);
   } else if (msgTag === 103) {
-    // Live host tempo (see MidiGenerator::OnIdle) -- keeps the ambient
+    // Live host tempo (see Drift::OnIdle) -- keeps the ambient
     // breathing animation's cycle length tempo-relative instead of the
     // hardcoded 120bpm fallback used until the first update arrives.
     const bpm = parseFloat(window.atob(data));
