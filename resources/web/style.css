@@ -117,7 +117,6 @@ html, body {
 
 .text-group { display: flex; flex-direction: column; gap: 1px; }
 .brand-title { margin: 0; font-weight: 700; font-size: 15px; color: var(--text-primary); }
-.brand-title span { font-weight: 400; color: var(--text-tertiary); }
 .brand-subtitle { margin: 0; font-size: 9px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
 
 .mode-link {

@@ -1,4 +1,4 @@
-// app.js — UI logic for Drift v2. Talks to the host exclusively
+// app.js — UI logic for Drift. Talks to the host exclusively
 // through the bridge functions defined in iplug.js (SPVFUI/BPCFUI/EPCFUI).
 //
 // Param order here MUST match EParams in Drift.h exactly -- indices
