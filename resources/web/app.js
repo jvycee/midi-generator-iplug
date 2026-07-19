@@ -703,11 +703,31 @@ function setupRingGlow(elements, minMs, maxMs) {
   const rings = elements.filter(Boolean);
   if (rings.length === 0) return;
 
+  // Rings involved in the most recent non-empty pulse -- only updated when
+  // something actually glows, so a quiet (count===0) round doesn't erase the
+  // memory of what to avoid repeating next.
+  let lastPulse = new Set();
+
   function reshuffle() {
     const roll = Math.random();
     const count = roll < 0.15 ? 0 : (roll < 0.7 ? 1 : Math.min(2, rings.length));
-    const shuffled = [...rings].sort(() => Math.random() - 0.5);
-    const glowing = new Set(shuffled.slice(0, count));
+
+    let glowing = new Set();
+    if (count > 0) {
+      // Prefer rings that weren't part of the last pulse, so it visibly
+      // rotates around the trio instead of occasionally re-picking the same
+      // ring -- which, since its class wouldn't change, would just hold
+      // steady for that interval instead of actually pulsing. Falls back to
+      // a repeat only if count exceeds how many "fresh" rings exist (e.g.
+      // count=2 right after a 2-ring pulse leaves just 1 fresh candidate).
+      const fresh = rings.filter(el => !lastPulse.has(el));
+      const stale = rings.filter(el => lastPulse.has(el));
+      const candidates = [...fresh].sort(() => Math.random() - 0.5)
+        .concat([...stale].sort(() => Math.random() - 0.5));
+      glowing = new Set(candidates.slice(0, count));
+      lastPulse = glowing;
+    }
+
     rings.forEach(el => el.classList.toggle('ring-glow', glowing.has(el)));
     setTimeout(reshuffle, minMs + Math.random() * (maxMs - minMs));
   }
