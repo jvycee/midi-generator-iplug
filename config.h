@@ -3,10 +3,10 @@
 #define PLUG_VERSION_HEX 0x00010000
 #define PLUG_VERSION_STR "1.0.0"
 #define PLUG_UNIQUE_ID 'dm39'
-#define PLUG_MFR_ID 'Acme'
-#define PLUG_URL_STR "https://iplug2.github.io"
-#define PLUG_EMAIL_STR "spam@me.com"
-#define PLUG_COPYRIGHT_STR "Copyright 2025 Acme Inc"
+#define PLUG_MFR_ID 'Jvce'  // 4-char manufacturer code (AU/VST FourCC); derived from Jvycee. Must stay exactly 4 chars with at least one uppercase (all-lowercase is Apple-reserved).
+#define PLUG_URL_STR "https://github.com/jvycee"
+#define PLUG_EMAIL_STR "" // TODO: set a real support/contact email before release -- shows in plugin metadata
+#define PLUG_COPYRIGHT_STR "Copyright 2026 Jvycee"
 #define PLUG_CLASS_NAME Drift
 
 #define BUNDLE_NAME "Drift"
@@ -36,7 +36,7 @@
 #define AUV2_VIEW_CLASS_STR "Drift_View"
 
 #define AAX_TYPE_IDS 'IPI1', 'IPI2'
-#define AAX_PLUG_MFR_STR "Acme"
+#define AAX_PLUG_MFR_STR "Jvycee"
 #define AAX_PLUG_NAME_STR "Drift\nIPIS"
 #define AAX_DOES_AUDIOSUITE 0
 #define AAX_PLUG_CATEGORY_STR "Synth"
