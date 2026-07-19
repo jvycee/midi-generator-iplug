@@ -20,17 +20,19 @@ namespace
         { kParamMod7Source, kParamMod7CC }, { kParamMod8Source, kParamMod8CC },
     };
 
-    // Mod1/2 default to something musically useful out of the box; Mod3-8
-    // default Off since modular patching is deliberate -- see the header
-    // comment on modSlots for why we don't guess traffic the user didn't ask for.
+    // All mod slots default to Off: routing a track value out as a CC is
+    // inherently deliberate (you wire a specific source to a specific
+    // destination for YOUR synth), and a non-Off default is a trap -- e.g.
+    // Mod2 used to default to HarmonyDrift -> CC74, so the flagship Drift
+    // knob silently doubled as a filter-cutoff control on any synth that
+    // maps CC74 (most do), reading as "Drift makes it louder." The plugin
+    // now sends notes only until the user opts a slot in. The CC *numbers*
+    // below are just sensible starting points (mod wheel, cutoff, expression,
+    // volume, pan, resonance, reverb, chorus) for when a slot is enabled.
     constexpr int kModSlotDefaultSource[8] = {
-        (int)ModSource::Velocity, (int)ModSource::HarmonyDrift,
-        (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off,
-        (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off,
+        (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off,
+        (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off, (int)ModSource::Off,
     };
-    // CC1 = mod wheel, CC74 = filter cutoff by convention; the rest
-    // (Expression, Volume, Pan, Resonance/Timbre, Reverb, Chorus) are just
-    // sensible starting points a modular patch is free to reassign.
     constexpr int kModSlotDefaultCC[8] = { 1, 74, 11, 7, 10, 71, 91, 93 };
 }
 
