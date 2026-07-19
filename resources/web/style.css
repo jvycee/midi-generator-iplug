@@ -21,6 +21,7 @@
   --accent-sage: #3d8bff;
   --accent-lavender: #3d8bff;
   --accent-glow: rgba(61, 139, 255, 0.5);         /* strong glow -- e.g. the source kit's "ACTIVE DOT" */
+  --accent-glow-off: rgba(61, 139, 255, 0);       /* same channels as --accent-glow at zero alpha -- see the ring-glow transition below for why this can't just be the `transparent` keyword */
   --accent-glow-soft: rgba(61, 139, 255, 0.24);   /* input focus glow, per the source kit's "INPUT FOCUS GLOW STATE" */
   --accent-wash: rgba(61, 139, 255, 0.07);        /* mini-pill/badge background wash, per the source kit */
   --accent-wash-strong: rgba(61, 139, 255, 0.11); /* the source kit's "Blue Glow" swatch value */
@@ -521,7 +522,14 @@ html, body {
    that both Full's Drift knob and Compact's Chaos knob share this markup. */
 .ambient-ring-outer, .ambient-ring-mid, .ambient-ring-inner {
   transition: filter 3.5s ease-in-out;
-  filter: drop-shadow(0 0 0px transparent);
+  /* Same rgba() channels as --accent-glow, alpha 0, NOT the `transparent`
+     keyword. A keyword-to-rgba() transition mixes two different color
+     representations, and WebKit doesn't always interpolate that pair
+     symmetrically -- fading in (transparent -> color) can look smooth while
+     fading out (color -> transparent) snaps instead of reversing gracefully.
+     Matching functional notation on both ends makes blur-radius and alpha
+     interpolate together, the same way, in both directions. */
+  filter: drop-shadow(0 0 0px var(--accent-glow-off));
 }
 .ambient-ring-outer.ring-glow, .ambient-ring-mid.ring-glow, .ambient-ring-inner.ring-glow {
   filter: drop-shadow(0 0 9px var(--accent-glow));
