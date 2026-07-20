@@ -64,6 +64,54 @@ static void TestRotationDrift()
     CHECK(t.patternBits == base);
 }
 
+static void TestStepOverride()
+{
+    EuclideanTrack t;
+    t.steps = 16;
+    t.pulses = 4;
+    t.rotation = 0;
+    rebuildTrackPattern(t);
+    uint32_t base = t.patternBits;
+
+    // Pick a generated-inactive step and a generated-active step to override
+    // in opposite directions -- E(4,16) fires on step 0 (downbeat-fixed) and
+    // never on step 1 (immediately after a hit in a maximally-even pattern).
+    CHECK(((base >> 0) & 1u) == 1u);
+    CHECK(((base >> 1) & 1u) == 0u);
+
+    // Force step 1 ON (overriding a generated-silent step).
+    t.stepOverrideMask  |= (1u << 1);
+    t.stepOverrideValue |= (1u << 1);
+    // Force step 0 OFF (overriding a generated-active step).
+    t.stepOverrideMask  |= (1u << 0);
+    t.stepOverrideValue &= ~(1u << 0);
+
+    uint32_t effective = computeEffectivePatternBits(t);
+    CHECK(((effective >> 0) & 1u) == 0u);
+    CHECK(((effective >> 1) & 1u) == 1u);
+    // Every other bit must be untouched -- overrides are surgical, not a
+    // wholesale pattern replacement.
+    CHECK((effective & ~0x3u) == (base & ~0x3u));
+
+    CHECK(evaluateStepTrigger(t, 0) == false);
+    CHECK(evaluateStepTrigger(t, 1) == true);
+
+    // patternBits itself (the generated cache) must stay untouched -- clearing
+    // an override should cleanly restore original generated behavior with no
+    // residue, which it can only do if the original was never overwritten.
+    CHECK(t.patternBits == base);
+
+    // Clearing step 0's override restores the original generated (active) behavior.
+    t.stepOverrideMask &= ~(1u << 0);
+    CHECK(evaluateStepTrigger(t, 0) == true);
+
+    // Overrides must survive Rotation Drift's live rotation, applied on top
+    // of the overridden pattern exactly like it applies to the generated one.
+    uint32_t expectedRotated = rotatePattern(computeEffectivePatternBits(t), 16, 5);
+    for (int s = 0; s < 16; ++s)
+        CHECK(evaluateStepTrigger(t, s, 5) == (((expectedRotated >> s) & 1u) != 0));
+}
+
 static void TestTrigCondition()
 {
     EuclideanTrack t;
@@ -595,6 +643,7 @@ int main()
     TestEuclideanPatterns();
     TestTrigCondition();
     TestRotationDrift();
+    TestStepOverride();
     TestPatternInvert();
     TestChordBuilding();
     TestChordPriority();

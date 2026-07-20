@@ -512,10 +512,15 @@ function updateSummaryReadouts() {
 }
 
 // Renders the live pattern shape pushed from C++ (see kMsgTagPatternUpdate /
-// Drift::SendPatternUpdate) -- track.patternBits itself, not a JS
-// reimplementation of the Euclidean algorithm, so this can never show a
-// shape the engine wouldn't actually play.
-function renderStepGrid(steps, bits, enabled) {
+// Drift::SendPatternUpdate) -- the engine's own effective pattern bits, not a
+// JS reimplementation of the Euclidean algorithm, so this can never show a
+// shape the engine wouldn't actually play. Cells are click/right-click
+// interactive: left-click toggles a manual override for that step (see
+// requestStepToggle), right-click clears it back to generated (see
+// requestStepClearOverride). Listeners are attached once per cell at
+// creation, not on every render -- this function runs on every pattern
+// change, which would otherwise stack duplicate listeners each time.
+function renderStepGrid(steps, bits, overrideMask, enabled) {
   const grid = document.getElementById('step-grid');
   if (!grid) return;
   grid.style.display = enabled ? '' : 'none';
@@ -525,11 +530,16 @@ function renderStepGrid(steps, bits, enabled) {
     for (let i = 0; i < steps; ++i) {
       const cell = document.createElement('div');
       cell.className = 'step-cell';
+      cell.addEventListener('click', () => requestStepToggle(i));
+      cell.addEventListener('contextmenu', (e) => { e.preventDefault(); requestStepClearOverride(i); });
       grid.appendChild(cell);
     }
   }
-  for (let i = 0; i < steps; ++i)
-    grid.children[i].classList.toggle('active', !!(bits & (1 << i)));
+  for (let i = 0; i < steps; ++i) {
+    const cell = grid.children[i];
+    cell.classList.toggle('active', !!(bits & (1 << i)));
+    cell.classList.toggle('override', !!(overrideMask & (1 << i)));
+  }
 }
 
 // Renders the live "home" chord pushed from C++ (see kMsgTagChordUpdate /
@@ -694,6 +704,18 @@ function requestReroll() {
   if (!window.IPLUG_HAS_HOST) {
     console.log('[preview] Reroll clicked -- no host to reseed.');
   }
+}
+
+// Step grid clicks (see Drift::OnMessage, kMsgTagStepToggle/kMsgTagStepClear).
+// Unlike the C++ -> JS direction (which always base64-encodes and needs
+// atob() on receipt), SAMFUI's own 'data' field is what WE must base64-encode
+// here -- IPlugWebViewEditorDelegate decodes it back to raw bytes before it
+// ever reaches Drift::OnMessage, so the C++ side reads the plain decimal text.
+function requestStepToggle(stepIndex) {
+  SAMFUI(107, -1, window.btoa(String(stepIndex)));
+}
+function requestStepClearOverride(stepIndex) {
+  SAMFUI(108, -1, window.btoa(String(stepIndex)));
 }
 
 // Called from OnMessage() below once the C++ side confirms the render
@@ -892,17 +914,19 @@ function OnMessage(msgTag, dataSize, data) {
     const bpm = parseFloat(window.atob(data));
     if (!isNaN(bpm)) updateMasterTempo(bpm);
   } else if (msgTag === 105) {
-    // "steps:bits" (see Drift::SendPatternUpdate). Grid only reflects the
-    // live truth in Euclidean mode -- Density/Chaos trigger per-step
-    // probabilistically, so the grid dims rather than show a stale/misleading shape.
+    // "steps:effectiveBits:overrideMask" (see Drift::SendPatternUpdate).
+    // Grid only reflects the live truth in Euclidean mode -- Density/Chaos
+    // trigger per-step probabilistically, so the grid hides entirely rather
+    // than show a shape that isn't what's actually being triggered.
     let payload = null;
     try { payload = window.atob(data); } catch (e) { /* ignore */ }
     if (payload) {
-      const [stepsStr, bitsStr] = payload.split(':');
+      const [stepsStr, bitsStr, overrideStr] = payload.split(':');
       const steps = parseInt(stepsStr, 10);
       const bits = parseInt(bitsStr, 10);
+      const overrideMask = parseInt(overrideStr, 10) || 0;
       if (!isNaN(steps) && !isNaN(bits))
-        renderStepGrid(steps, bits, state[paramIdx('kParamSequenceMode')] === 0);
+        renderStepGrid(steps, bits, overrideMask, state[paramIdx('kParamSequenceMode')] === 0);
     }
   } else if (msgTag === 106) {
     // Comma-separated MIDI note numbers (see Drift::SendChordUpdate).

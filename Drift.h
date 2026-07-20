@@ -75,8 +75,10 @@ constexpr int kMsgTagExportSucceeded = 101;
 constexpr int kMsgTagExportFailed    = 102;
 constexpr int kMsgTagTempoUpdate     = 103; // C++ -> JS: live host tempo, see OnIdle()
 constexpr int kMsgTagRerollRequest   = 104; // JS -> C++: reseed the generative wander, see OnMessage()
-constexpr int kMsgTagPatternUpdate   = 105; // C++ -> JS: "steps:bits" -- the configured Euclidean shape, see OnIdle()
+constexpr int kMsgTagPatternUpdate   = 105; // C++ -> JS: "steps:effectiveBits:overrideMask" -- the configured Euclidean shape plus manual overlay, see OnIdle()
 constexpr int kMsgTagChordUpdate     = 106; // C++ -> JS: comma-separated MIDI note numbers for the current "home" chord (scaleDegree 0), see OnIdle()
+constexpr int kMsgTagStepToggle      = 107; // JS -> C++: decimal step index (as text) to toggle the manual override for, see OnMessage()
+constexpr int kMsgTagStepClear       = 108; // JS -> C++: decimal step index (as text) to clear the manual override for, see OnMessage()
 
 // Fixed-capacity, allocation-free stand-in for std::vector, sized for the
 // note lists below. push()/removeAt() never touch the heap, which is what

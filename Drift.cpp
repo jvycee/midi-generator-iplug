@@ -394,6 +394,35 @@ bool Drift::OnMessage(int msgTag, int ctrlTag, int dataSize, const void* pData)
         return true;
     }
 
+    if ((msgTag == kMsgTagStepToggle || msgTag == kMsgTagStepClear) && dataSize > 0)
+    {
+        // pData is the raw decoded bytes of the decimal step index the JS
+        // side sent as text -- SAMFUI's payload arrives already base64-
+        // decoded by IPlugWebViewEditorDelegate before OnMessage ever sees
+        // it (the reverse of the C++ -> JS direction, where JS has to
+        // atob() -- see the SendPatternUpdate/SendChordUpdate comments).
+        WDL_String buf;
+        buf.Set(static_cast<const char*>(pData), dataSize);
+        int steps = std::max(1, track.steps);
+        int stepIndex = ((atoi(buf.Get()) % steps) + steps) % steps;
+        uint32_t bit = 1u << stepIndex;
+
+        if (msgTag == kMsgTagStepToggle)
+        {
+            bool currentlyOn = (computeEffectivePatternBits(track) & bit) != 0;
+            track.stepOverrideMask |= bit;
+            if (currentlyOn) track.stepOverrideValue &= ~bit;
+            else             track.stepOverrideValue |= bit;
+        }
+        else // kMsgTagStepClear
+        {
+            track.stepOverrideMask &= ~bit;
+        }
+
+        patternDirty = true;
+        return true;
+    }
+
     return false;
 }
 
@@ -444,8 +473,13 @@ void Drift::OnIdle()
 
 void Drift::SendPatternUpdate()
 {
+    // effectiveBits (generated + manual overlay combined), not raw
+    // patternBits -- the grid must show what will actually play, never a
+    // shape the engine wouldn't. overrideMask rides along separately so the
+    // UI can still visually distinguish "manually forced" from "generated".
+    uint32_t effectiveBits = computeEffectivePatternBits(track);
     WDL_String msg;
-    msg.SetFormatted(64, "%d:%u", track.steps, track.patternBits);
+    msg.SetFormatted(96, "%d:%u:%u", track.steps, effectiveBits, track.stepOverrideMask);
     SendArbitraryMsgFromDelegate(kMsgTagPatternUpdate, msg.GetLength(), msg.Get());
 }
 

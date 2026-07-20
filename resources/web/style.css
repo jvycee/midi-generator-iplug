@@ -241,12 +241,31 @@ html, body {
   border-radius: 2px;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
+  cursor: pointer;
 }
+.step-cell:hover { border-color: var(--text-secondary); }
 .step-cell.active {
   background: var(--accent-wash-strong);
   border-color: var(--accent-sage);
   box-shadow: 0 0 4px var(--accent-glow-soft);
 }
+/* Manually overridden (click = toggle, right-click = clear -- see
+   requestStepToggle/requestStepClearOverride): forced-on is a solid fill,
+   visibly stronger than a generated-active cell's translucent wash, so an
+   intentional edit reads as more emphatic than something the algorithm
+   merely proposed. Forced-off gets a dashed border instead of the plain
+   flat default, so a consciously silenced step doesn't look identical to a
+   step the generator simply never fires. */
+.step-cell.override.active {
+  background: var(--accent-sage);
+  border-color: var(--accent-sage);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+.step-cell.override:not(.active) {
+  border-style: dashed;
+  border-color: var(--accent-sage);
+}
+
 /* --- chord readout (live chord shape, C++-computed -- see kMsgTagChordUpdate) --- */
 
 .chord-readout {

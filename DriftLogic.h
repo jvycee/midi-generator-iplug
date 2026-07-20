@@ -564,7 +564,27 @@ struct EuclideanTrack
 
     uint32_t patternBits = 0; // bit i set => step i fires (Euclidean mode only)
     int currentStep = -1;
+
+    // Manual per-step overlay on top of the generated Euclidean pattern (see
+    // the step grid UI, kMsgTagStepToggleRequest). stepOverrideMask bit i set
+    // means step i's fire/no-fire decision is manually forced rather than
+    // generated; stepOverrideValue's bit i is then the forced value. Never
+    // touched by ReseedTrack/ReseedTrackDeterministic -- a manually-curated
+    // groove is a deliberate edit, not part of the "generative wander" Reroll
+    // resets. See computeEffectivePatternBits.
+    uint32_t stepOverrideMask  = 0;
+    uint32_t stepOverrideValue = 0;
 };
+
+// The Euclidean pattern actually in effect once manual step overrides are
+// layered on top of the generated patternBits -- what evaluateStepTrigger
+// reads and what the step grid UI shows. Bits outside [0, t.steps) are
+// simply never read by anything, so no clamping is needed here even though
+// stepOverrideMask/Value can carry stale bits from a since-shrunk step count.
+inline uint32_t computeEffectivePatternBits(const EuclideanTrack& t)
+{
+    return (t.patternBits & ~t.stepOverrideMask) | (t.stepOverrideValue & t.stepOverrideMask);
+}
 
 // Advances t.arpIndex (and t.arpDirection for Up-Down's ping-pong) to the
 // NEXT position for a chord of `chordSize` notes, per t.arpMode. Called once
@@ -733,7 +753,8 @@ inline bool evaluateStepTrigger(EuclideanTrack& t, int stepIndex, int rotationDr
         case SequenceMode::Euclidean:
         {
             int steps = std::max(1, t.steps);
-            uint32_t bits = rotationDriftSteps != 0 ? rotatePattern(t.patternBits, steps, rotationDriftSteps) : t.patternBits;
+            uint32_t effectiveBits = computeEffectivePatternBits(t);
+            uint32_t bits = rotationDriftSteps != 0 ? rotatePattern(effectiveBits, steps, rotationDriftSteps) : effectiveBits;
             hit = (bits >> (stepIndex % steps)) & 1u;
             break;
         }
