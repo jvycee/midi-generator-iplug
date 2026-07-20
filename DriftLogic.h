@@ -121,6 +121,24 @@ enum class VoicingStyle : int
     Count
 };
 
+// Arpeggiator: orthogonal to SequenceMode (which decides WHEN a step fires)
+// and to Voicing (which still fully applies -- it reorders/spreads the
+// chord before the arp steps through it, so the same direction sounds
+// different under Close vs Drop2 vs Spread, for free). Off (default) is the
+// existing "fire the whole chord at once" behavior, unchanged. Scoped to
+// Up/Down/Up-Down for v1 -- Down-Up is only meaningfully distinct from
+// Up-Down at reset time given the cursor is persistent track state, and
+// "As Played" has no coherent meaning here since chords are generated, not
+// received from live note input.
+enum class ArpMode : int
+{
+    Off = 0,
+    Up,
+    Down,
+    UpDown,
+    Count
+};
+
 // FIX: fold out-of-range notes by octaves instead of clamping to 0/127.
 // jlimit() collapsed every over-range voice onto the same pitch, which both
 // destroyed the chord and created duplicate note-ons -- the first note-off
@@ -470,6 +488,16 @@ struct EuclideanTrack
     // chord tone gets sent to a synth that can only play one note anyway.
     bool monoMode = false;
 
+    // Off (default): every hit fires the whole chord, unchanged. Otherwise:
+    // each hit fires just the NEXT note in the chord instead of all of them
+    // -- see ArpMode and buildTrackNotes. arpIndex/arpDirection are the
+    // persistent cursor through the chord, advanced once per triggered hit
+    // (mirrors scaleDegree's role for harmony drift). Ignored when monoMode
+    // is on (a 1-note "chord" has nothing to step through).
+    ArpMode arpMode  = ArpMode::Off;
+    int arpIndex     = 0;
+    int arpDirection = 1; // +1 or -1, for Up-Down's ping-pong
+
     float velocity      = 0.8f;
 
     // A note's duration is noteLengthSteps (in 16th-notes) times gate: gate
@@ -538,9 +566,46 @@ struct EuclideanTrack
     int currentStep = -1;
 };
 
+// Advances t.arpIndex (and t.arpDirection for Up-Down's ping-pong) to the
+// NEXT position for a chord of `chordSize` notes, per t.arpMode. Called once
+// per triggered hit, after this hit's note has already been picked using the
+// CURRENT (pre-advance) index -- so the first hit plays index 0, then this
+// runs to set up index 1 for the next hit, etc.
+inline void advanceArpCursor(EuclideanTrack& t, int chordSize)
+{
+    if (chordSize <= 1) { t.arpIndex = 0; return; }
+
+    switch (t.arpMode)
+    {
+        case ArpMode::Up:
+            t.arpIndex = (t.arpIndex + 1) % chordSize;
+            break;
+
+        case ArpMode::Down:
+            t.arpIndex = ((t.arpIndex - 1) % chordSize + chordSize) % chordSize;
+            break;
+
+        case ArpMode::UpDown:
+        {
+            // Ping-pong across [0, chordSize-1] without repeating an endpoint
+            // twice in a row: 0,1,2,3,2,1,0,1,2,3,... for a 4-note chord.
+            t.arpIndex += t.arpDirection;
+            if (t.arpIndex >= chordSize)     { t.arpIndex = std::max(0, chordSize - 2); t.arpDirection = -1; }
+            else if (t.arpIndex < 0)         { t.arpIndex = std::min(1, chordSize - 1); t.arpDirection = 1; }
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
 // Notes for one triggered hit. Mono mode bypasses the chord engine entirely
 // and returns just the scale-quantized root -- see EuclideanTrack::monoMode.
-inline NoteSet buildTrackNotes(const EuclideanTrack& t, int scaleRoot, int key, ScaleMode mode)
+// Non-const: when Arp mode is active, this also advances the arp cursor as a
+// side effect of picking this hit's note -- mirrors how applyHarmonyDrift
+// already mutates track state (scaleDegree) as a side effect of a hit.
+inline NoteSet buildTrackNotes(EuclideanTrack& t, int scaleRoot, int key, ScaleMode mode)
 {
     if (t.monoMode)
     {
@@ -549,7 +614,16 @@ inline NoteSet buildTrackNotes(const EuclideanTrack& t, int scaleRoot, int key, 
         return single;
     }
 
-    return buildChordInKey(scaleRoot, t.chordType, t.voicing, t.chordNotes, key, mode, !t.chordPriority);
+    NoteSet chord = buildChordInKey(scaleRoot, t.chordType, t.voicing, t.chordNotes, key, mode, !t.chordPriority);
+
+    if (t.arpMode == ArpMode::Off || chord.count <= 1)
+        return chord;
+
+    int idx = ((t.arpIndex % chord.count) + chord.count) % chord.count; // defensive wrap
+    NoteSet single;
+    single.push(chord.notes[idx]);
+    advanceArpCursor(t, chord.count);
+    return single;
 }
 
 //==============================================================================

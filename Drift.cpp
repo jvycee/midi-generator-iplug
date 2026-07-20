@@ -84,6 +84,7 @@ Drift::Drift(const InstanceInfo& info)
     GetParam(kParamExportVariations)->InitInt("Variations", 1, 1, 8);
     GetParam(kParamMonoMode)->InitBool("Mono", false);
     GetParam(kParamMaxVoices)->InitInt("Max Voices", 8, 1, 16); // global cap across overlapping hits, not per-chord
+    GetParam(kParamArpMode)->InitEnum("Arp Mode", (int)ArpMode::Off, { "Off", "Up", "Down", "Up-Down" });
 
     for (int i = 0; i < 8; ++i)
     {
@@ -155,6 +156,7 @@ Drift::Drift(const InstanceInfo& info)
     track.rootNote = GetParam(kParamRootNote)->Int();
     track.voicing = static_cast<VoicingStyle>(GetParam(kParamVoicing)->Int());
     track.monoMode = GetParam(kParamMonoMode)->Bool();
+    track.arpMode = static_cast<ArpMode>(GetParam(kParamArpMode)->Int());
     track.noteLengthSteps = GetParam(kParamNoteLength)->Int();
     track.gate = (float)(GetParam(kParamGate)->Value() / 100.);
     track.velocity = (float)(GetParam(kParamVelocity)->Value() / 100.);
@@ -302,6 +304,9 @@ void Drift::OnParamChange(int paramIdx)
         case kParamMonoMode:
             track.monoMode = GetParam(kParamMonoMode)->Bool();
             break;
+        case kParamArpMode:
+            track.arpMode = static_cast<ArpMode>(GetParam(kParamArpMode)->Int());
+            break;
         case kParamNoteLength:
             track.noteLengthSteps = GetParam(kParamNoteLength)->Int();
             break;
@@ -386,6 +391,8 @@ void Drift::ReseedTrack(EuclideanTrack& t)
     if (t.rngState == 0) t.rngState = 0x9E3779B9u; // xorshift32 guards 0 too, but avoid relying on it twice
     t.scaleDegree = 0;
     t.chaosX = 0.1 + (double)(rd() % 8000) / 10000.0; // fresh value in [0.1, 0.9), clear of both fixed points
+    t.arpIndex = 0;
+    t.arpDirection = 1; // same reasoning as scaleDegree above -- restart the arp cursor at a known position, not mid-cycle
 }
 
 void Drift::OnIdle()

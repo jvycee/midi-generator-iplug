@@ -63,6 +63,7 @@ enum EParams
   kParamAccentAmount,      // velocity boost on accented steps; 0 = off (default)
   kParamFreeze,            // stop triggering new hits, let whatever's ringing continue -- see ProcessBlock
   kParamExportVariations,  // how many independently-reseeded takes to render on export; 1 = current single-file behavior
+  kParamArpMode,           // Off/Up/Down/Up-Down -- steps through the chord one note per hit instead of firing it all at once (see ArpMode)
   kNumParams
 };
 

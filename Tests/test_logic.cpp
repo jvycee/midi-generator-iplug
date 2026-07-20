@@ -172,6 +172,79 @@ static void TestMonoMode()
     CHECK(mono.notes[0] == 67);
 }
 
+static void TestArpCursorAdvance()
+{
+    // Up: cyclical ascending index sequence for a 3-note chord.
+    EuclideanTrack up;
+    up.arpMode = ArpMode::Up;
+    int upSeq[7];
+    for (int i = 0; i < 7; ++i) { upSeq[i] = up.arpIndex; advanceArpCursor(up, 3); }
+    int upExpected[7] = { 0, 1, 2, 0, 1, 2, 0 };
+    for (int i = 0; i < 7; ++i) CHECK(upSeq[i] == upExpected[i]);
+
+    // Down: descending, wrapping. Starts at the default index (0) for one
+    // hit before settling into the descending cycle -- see the comment on
+    // advanceArpCursor; this is expected, not a bug.
+    EuclideanTrack down;
+    down.arpMode = ArpMode::Down;
+    int downSeq[7];
+    for (int i = 0; i < 7; ++i) { downSeq[i] = down.arpIndex; advanceArpCursor(down, 3); }
+    int downExpected[7] = { 0, 2, 1, 0, 2, 1, 0 };
+    for (int i = 0; i < 7; ++i) CHECK(downSeq[i] == downExpected[i]);
+
+    // Up-Down: ping-pongs across [0, chordSize-1] without repeating an
+    // endpoint twice in a row, for a 4-note chord.
+    EuclideanTrack updown;
+    updown.arpMode = ArpMode::UpDown;
+    int udSeq[13];
+    for (int i = 0; i < 13; ++i) { udSeq[i] = updown.arpIndex; advanceArpCursor(updown, 4); }
+    int udExpected[13] = { 0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0 };
+    for (int i = 0; i < 13; ++i) CHECK(udSeq[i] == udExpected[i]);
+
+    // chordSize<=1: always index 0, never advances into anything invalid.
+    EuclideanTrack single;
+    single.arpMode = ArpMode::Up;
+    single.arpIndex = 5; // deliberately out of range for a 1-note chord
+    advanceArpCursor(single, 1);
+    CHECK(single.arpIndex == 0);
+}
+
+static void TestArpBuildTrackNotes()
+{
+    // C major triad (root=60, Major -> intervals {0,4,7}), C Ionian so
+    // quantization is a no-op -> chord = {60, 64, 67}, 3 notes.
+    EuclideanTrack t;
+    t.chordType = ChordType::Major;
+    t.chordNotes = 3;
+    t.arpMode = ArpMode::Up;
+
+    int played[6];
+    for (int i = 0; i < 6; ++i)
+    {
+        NoteSet n = buildTrackNotes(t, 60, 0, ScaleMode::Ionian);
+        CHECK(n.count == 1); // arp always resolves to exactly one note per hit
+        played[i] = n.notes[0];
+    }
+    int expected[6] = { 60, 64, 67, 60, 64, 67 };
+    for (int i = 0; i < 6; ++i) CHECK(played[i] == expected[i]);
+
+    // Off (default): unchanged behavior -- the whole chord fires at once.
+    EuclideanTrack chordMode;
+    chordMode.chordType = ChordType::Major;
+    chordMode.chordNotes = 3;
+    NoteSet whole = buildTrackNotes(chordMode, 60, 0, ScaleMode::Ionian);
+    CHECK(whole.count == 3);
+
+    // monoMode takes priority over arpMode -- a 1-note "chord" has nothing
+    // to arp through.
+    EuclideanTrack mono;
+    mono.monoMode = true;
+    mono.arpMode = ArpMode::Up;
+    NoteSet monoNote = buildTrackNotes(mono, 60, 0, ScaleMode::Ionian);
+    CHECK(monoNote.count == 1);
+    CHECK(monoNote.notes[0] == 60);
+}
+
 static void TestHarmonyDriftGravity()
 {
     // Full gravity (1.0) must be deterministic: always the shorter path
@@ -396,6 +469,49 @@ static void TestExportNoSamePitchOverlap()
     CHECK(noteOnCount == 16); // 1 bar * 16 steps, every step fires, mono
 }
 
+// Confirms MidiExport.h needs zero Arp-specific code: renderPatternToSMF takes
+// its EuclideanTrack by value and calls the same buildTrackNotes as
+// ProcessStep, so setting track.arpMode before export should be enough to
+// make the export inherit arp behavior with no changes to MidiExport.h itself.
+static void TestExportArpMode()
+{
+    GlobalParams gp; // C Ionian, so the C major triad below is unaffected by quantization
+    ModSlot slots[1];
+
+    EuclideanTrack track;
+    track.steps = 4;
+    track.pulses = 4; // dense pattern -> every 16th in the bar fires (16 hits/bar)
+    track.chordType = ChordType::Major; // root=60 -> triad {60, 64, 67}
+    track.arpMode = ArpMode::Up;
+    rebuildTrackPattern(track);
+
+    auto smf = MidiExport::renderPatternToSMF(track, gp, 120.0, 1, slots, 0, 8);
+    auto notes = parseNoteEvents(smf);
+
+    std::vector<int> onPitches;
+    for (const auto& e : notes)
+        if (e.on) onPitches.push_back(e.pitch);
+
+    // Arp resolves every hit to exactly one note, cycling Up through the
+    // triad -- not the whole chord firing at once (which would be 3 note-ons
+    // per hit, 48 total, not cycling).
+    CHECK(onPitches.size() == 16);
+    int expected[16] = { 60,64,67,60, 64,67,60,64, 67,60,64,67, 60,64,67,60 };
+    for (size_t i = 0; i < onPitches.size() && i < 16; ++i)
+        CHECK(onPitches[i] == expected[i]);
+
+    // Sanity check against the same track with Arp off: the whole chord
+    // should fire at once, 3x the note-on count.
+    EuclideanTrack chordTrack = track;
+    chordTrack.arpMode = ArpMode::Off;
+    rebuildTrackPattern(chordTrack);
+    auto smfChord = MidiExport::renderPatternToSMF(chordTrack, gp, 120.0, 1, slots, 0, 8);
+    auto notesChord = parseNoteEvents(smfChord);
+    int onCountChord = 0;
+    for (const auto& e : notesChord) if (e.on) ++onCountChord;
+    CHECK(onCountChord == 48);
+}
+
 static void TestExportRatchetOverlapClean()
 {
     GlobalParams gp; // no swing, hard clock
@@ -452,6 +568,8 @@ int main()
     TestChordBuilding();
     TestChordPriority();
     TestMonoMode();
+    TestArpCursorAdvance();
+    TestArpBuildTrackNotes();
     TestHarmonyDriftGravity();
     TestAccent();
     TestScaleQuantization();
@@ -460,6 +578,7 @@ int main()
     TestMidiExportProducesAFile();
     TestRatchet();
     TestExportNoSamePitchOverlap();
+    TestExportArpMode();
     TestExportRatchetOverlapClean();
 
     if (gFailures == 0)
