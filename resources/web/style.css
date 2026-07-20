@@ -21,7 +21,6 @@
   --accent-sage: #3d8bff;
   --accent-lavender: #3d8bff;
   --accent-glow: rgba(61, 139, 255, 0.5);         /* strong glow -- e.g. the source kit's "ACTIVE DOT" */
-  --accent-glow-off: rgba(61, 139, 255, 0);       /* same channels as --accent-glow at zero alpha -- see the ring-glow transition below for why this can't just be the `transparent` keyword */
   --accent-glow-soft: rgba(61, 139, 255, 0.24);   /* input focus glow, per the source kit's "INPUT FOCUS GLOW STATE" */
   --accent-wash: rgba(61, 139, 255, 0.07);        /* mini-pill/badge background wash, per the source kit */
   --accent-wash-strong: rgba(61, 139, 255, 0.11); /* the source kit's "Blue Glow" swatch value */
@@ -514,25 +513,39 @@ html, body {
 /* Slow random glow on the moving rings (JS: setupRingGlow in app.js). Each
    .knob-canvas's ring trio is independently reshuffled every 6-12s, capped
    at 2 of the 3 glowing at once, never all three, never a fixed pattern.
-   `filter: drop-shadow` rather than `box-shadow` because these are
-   irregular blob shapes now (see the border-radius above) -- drop-shadow
-   follows the actual silhouette instead of haloing the bounding box. The
-   long `transition` is what makes each ring's glow fade in/out slowly
-   ("breathing") rather than snapping on. Applies to every .knob-canvas now
-   that both Full's Drift knob and Compact's Chaos knob share this markup. */
-.ambient-ring-outer, .ambient-ring-mid, .ambient-ring-inner {
-  transition: filter 3.5s ease-in-out;
-  /* Same rgba() channels as --accent-glow, alpha 0, NOT the `transparent`
-     keyword. A keyword-to-rgba() transition mixes two different color
-     representations, and WebKit doesn't always interpolate that pair
-     symmetrically -- fading in (transparent -> color) can look smooth while
-     fading out (color -> transparent) snaps instead of reversing gracefully.
-     Matching functional notation on both ends makes blur-radius and alpha
-     interpolate together, the same way, in both directions. */
-  filter: drop-shadow(0 0 0px var(--accent-glow-off));
-}
-.ambient-ring-outer.ring-glow, .ambient-ring-mid.ring-glow, .ambient-ring-inner.ring-glow {
+
+   Implemented as a fixed-intensity ::after overlay whose OPACITY is
+   transitioned, not as a transition on the ring's own `filter`. WebKit does
+   not reliably animate `filter: drop-shadow()` -- fading it in can look
+   smooth while fading it back out snaps instead of reversing gracefully,
+   regardless of the color notation on either end (this replaced an earlier
+   attempt that tried to fix it by matching rgba() notation on both ends;
+   that addressed a real but different bug and didn't fix this one, because
+   the drop-shadow transition itself is the unreliable part). Opacity
+   transitions are reliably smooth in both directions in every engine, so
+   the overlay's drop-shadow is a constant value and only its opacity moves.
+
+   The overlay is a pseudo-element (not a real duplicate ring) specifically
+   so it automatically follows the base ring's live rotate/scale from the
+   orbit animation below -- transforms apply to an element's full rendering
+   including its pseudo-elements, so no separate animation/sync is needed.
+   `drop-shadow` rather than `box-shadow` because these are irregular blob
+   shapes (see the border-radius above) -- drop-shadow follows the actual
+   silhouette instead of haloing the bounding box, so the overlay repeats
+   the same border/border-radius as its ring to match that silhouette. */
+.ambient-ring-outer::after, .ambient-ring-mid::after, .ambient-ring-inner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: inherit;
+  border-radius: inherit;
   filter: drop-shadow(0 0 9px var(--accent-glow));
+  opacity: 0;
+  transition: opacity 3.5s ease-in-out;
+  pointer-events: none;
+}
+.ambient-ring-outer.ring-glow::after, .ambient-ring-mid.ring-glow::after, .ambient-ring-inner.ring-glow::after {
+  opacity: 1;
 }
 
 /* Class-based (not ID) so it applies to any hero knob, not just Compact's --
