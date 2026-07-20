@@ -511,6 +511,36 @@ function updateSummaryReadouts() {
   if (el2) el2.textContent = text;
 }
 
+// Renders the live pattern shape pushed from C++ (see kMsgTagPatternUpdate /
+// Drift::SendPatternUpdate) -- track.patternBits itself, not a JS
+// reimplementation of the Euclidean algorithm, so this can never show a
+// shape the engine wouldn't actually play.
+function renderStepGrid(steps, bits, enabled) {
+  const grid = document.getElementById('step-grid');
+  if (!grid) return;
+  grid.style.display = enabled ? '' : 'none';
+  if (!enabled) return; // nothing to render -- Density/Chaos don't trigger off this shape at all
+  if (grid.children.length !== steps) {
+    grid.innerHTML = '';
+    for (let i = 0; i < steps; ++i) {
+      const cell = document.createElement('div');
+      cell.className = 'step-cell';
+      grid.appendChild(cell);
+    }
+  }
+  for (let i = 0; i < steps; ++i)
+    grid.children[i].classList.toggle('active', !!(bits & (1 << i)));
+}
+
+// Renders the live "home" chord pushed from C++ (see kMsgTagChordUpdate /
+// Drift::SendChordUpdate) -- built via the same buildChordInKey the engine
+// actually plays through, not a JS reimplementation of the chord/scale math.
+function renderChordReadout(noteNumbers) {
+  const el = document.getElementById('chord-readout');
+  if (!el || !noteNumbers.length) return;
+  el.textContent = noteNumbers.map(midiNoteName).join(' · ');
+}
+
 // ==========================================================================
 // Tempo-relative motion. Full's breathing loop is 8 "half-tempo beats" and
 // Compact's is 12 -- i.e. the whole UI breathes at half the host's BPM, not
@@ -861,6 +891,27 @@ function OnMessage(msgTag, dataSize, data) {
     // hardcoded 120bpm fallback used until the first update arrives.
     const bpm = parseFloat(window.atob(data));
     if (!isNaN(bpm)) updateMasterTempo(bpm);
+  } else if (msgTag === 105) {
+    // "steps:bits" (see Drift::SendPatternUpdate). Grid only reflects the
+    // live truth in Euclidean mode -- Density/Chaos trigger per-step
+    // probabilistically, so the grid dims rather than show a stale/misleading shape.
+    let payload = null;
+    try { payload = window.atob(data); } catch (e) { /* ignore */ }
+    if (payload) {
+      const [stepsStr, bitsStr] = payload.split(':');
+      const steps = parseInt(stepsStr, 10);
+      const bits = parseInt(bitsStr, 10);
+      if (!isNaN(steps) && !isNaN(bits))
+        renderStepGrid(steps, bits, state[paramIdx('kParamSequenceMode')] === 0);
+    }
+  } else if (msgTag === 106) {
+    // Comma-separated MIDI note numbers (see Drift::SendChordUpdate).
+    let payload = null;
+    try { payload = window.atob(data); } catch (e) { /* ignore */ }
+    if (payload) {
+      const notes = payload.split(',').map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+      if (notes.length) renderChordReadout(notes);
+    }
   }
 }
 

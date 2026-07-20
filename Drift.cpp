@@ -223,9 +223,15 @@ void Drift::OnParamChange(int paramIdx)
         case kParamPulses:
             track.pulses = GetParam(kParamPulses)->Int();
             rebuildTrackPattern(track);
+            patternDirty = true;
             break;
         case kParamSequenceMode:
             track.seqMode = static_cast<SequenceMode>(GetParam(kParamSequenceMode)->Int());
+            // patternBits itself doesn't change, but the UI grid only means
+            // anything in Euclidean mode -- Density/Chaos trigger per-step
+            // probabilistically, not off a fixed shape -- so the JS side
+            // needs to know this changed to hide/show the grid accordingly.
+            patternDirty = true;
             break;
         case kParamSequenceAmount:
             track.density = track.chaosAmount = (float)(GetParam(kParamSequenceAmount)->Value() / 100.);
@@ -244,15 +250,19 @@ void Drift::OnParamChange(int paramIdx)
             break;
         case kParamKey:
             globalParams.key = GetParam(kParamKey)->Int();
+            chordDirty = true;
             break;
         case kParamScaleMode:
             globalParams.scaleMode = static_cast<ScaleMode>(GetParam(kParamScaleMode)->Int());
+            chordDirty = true;
             break;
         case kParamChordType:
             track.chordType = static_cast<ChordType>(GetParam(kParamChordType)->Int());
+            chordDirty = true;
             break;
         case kParamChordVoices:
             track.chordNotes = GetParam(kParamChordVoices)->Int();
+            chordDirty = true;
             break;
         case kParamHarmonyDrift:
             track.driftAmount = (float)(GetParam(kParamHarmonyDrift)->Value() / 100.);
@@ -272,14 +282,17 @@ void Drift::OnParamChange(int paramIdx)
         case kParamSteps:
             track.steps = GetParam(kParamSteps)->Int();
             rebuildTrackPattern(track);
+            patternDirty = true;
             break;
         case kParamRotation:
             track.rotation = GetParam(kParamRotation)->Int();
             rebuildTrackPattern(track);
+            patternDirty = true;
             break;
         case kParamPatternInvert:
             track.patternInvert = GetParam(kParamPatternInvert)->Bool();
             rebuildTrackPattern(track);
+            patternDirty = true;
             break;
         case kParamTrigEvery:
             track.trigEvery = GetParam(kParamTrigEvery)->Int();
@@ -295,15 +308,19 @@ void Drift::OnParamChange(int paramIdx)
             break;
         case kParamChordPriority:
             track.chordPriority = GetParam(kParamChordPriority)->Bool();
+            chordDirty = true;
             break;
         case kParamRootNote:
             track.rootNote = GetParam(kParamRootNote)->Int();
+            chordDirty = true;
             break;
         case kParamVoicing:
             track.voicing = static_cast<VoicingStyle>(GetParam(kParamVoicing)->Int());
+            chordDirty = true;
             break;
         case kParamMonoMode:
             track.monoMode = GetParam(kParamMonoMode)->Bool();
+            chordDirty = true;
             break;
         case kParamArpMode:
             track.arpMode = static_cast<ArpMode>(GetParam(kParamArpMode)->Int());
@@ -420,6 +437,45 @@ void Drift::OnIdle()
         bpmStr.SetFormatted(32, "%.3f", bpm);
         SendArbitraryMsgFromDelegate(kMsgTagTempoUpdate, bpmStr.GetLength(), bpmStr.Get());
     }
+
+    if (patternDirty) { SendPatternUpdate(); patternDirty = false; }
+    if (chordDirty)   { SendChordUpdate();   chordDirty   = false; }
+}
+
+void Drift::SendPatternUpdate()
+{
+    WDL_String msg;
+    msg.SetFormatted(64, "%d:%u", track.steps, track.patternBits);
+    SendArbitraryMsgFromDelegate(kMsgTagPatternUpdate, msg.GetLength(), msg.Get());
+}
+
+void Drift::SendChordUpdate()
+{
+    // scaleDegree 0 -- the "home" chord as configured, not wherever harmony
+    // drift's live random walk currently is. Drift is per-hit audio-thread
+    // state; showing its live wander here would mean this readout changes
+    // out from under the user with no visual explanation why. The Reroll
+    // button already resets scaleDegree to 0 (see ReseedTrack), so "home" is
+    // also where a fresh take actually starts from.
+    int scaleRoot = scaleDegreeToNote(globalParams.key, globalParams.scaleMode, 0, track.rootNote);
+
+    WDL_String msg;
+    if (track.monoMode)
+    {
+        msg.SetFormatted(16, "%d", foldIntoMidiRange(scaleRoot));
+    }
+    else
+    {
+        NoteSet chord = buildChordInKey(scaleRoot, track.chordType, track.voicing, track.chordNotes,
+                                         globalParams.key, globalParams.scaleMode, !track.chordPriority);
+        for (int i = 0; i < chord.count; ++i)
+        {
+            char buf[8];
+            snprintf(buf, sizeof(buf), i == 0 ? "%d" : ",%d", chord.notes[i]);
+            msg.Append(buf);
+        }
+    }
+    SendArbitraryMsgFromDelegate(kMsgTagChordUpdate, msg.GetLength(), msg.Get());
 }
 
 void Drift::OnReset()

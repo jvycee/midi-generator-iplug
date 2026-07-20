@@ -75,6 +75,8 @@ constexpr int kMsgTagExportSucceeded = 101;
 constexpr int kMsgTagExportFailed    = 102;
 constexpr int kMsgTagTempoUpdate     = 103; // C++ -> JS: live host tempo, see OnIdle()
 constexpr int kMsgTagRerollRequest   = 104; // JS -> C++: reseed the generative wander, see OnMessage()
+constexpr int kMsgTagPatternUpdate   = 105; // C++ -> JS: "steps:bits" -- the configured Euclidean shape, see OnIdle()
+constexpr int kMsgTagChordUpdate     = 106; // C++ -> JS: comma-separated MIDI note numbers for the current "home" chord (scaleDegree 0), see OnIdle()
 
 // Fixed-capacity, allocation-free stand-in for std::vector, sized for the
 // note lists below. push()/removeAt() never touch the heap, which is what
@@ -148,6 +150,14 @@ private:
     int ccUpdateSamplesRemaining = 0;
     void SendModCCs(); // shared by the ticker and on-hit paths in ProcessBlock
 
+    // Push the current rhythm pattern / chord shape to the WebView -- called
+    // from OnIdle when patternDirty/chordDirty is set. Reuses track.patternBits
+    // and buildChordInKey directly rather than re-deriving the shape some
+    // other way, so the UI can never show something the engine wouldn't
+    // actually play.
+    void SendPatternUpdate();
+    void SendChordUpdate();
+
     // Last value actually sent per mod slot (quantized to the 0-127 MIDI
     // byte, sidestepping float-epsilon comparisons), so the 50Hz ticker
     // skips resending a value that hasn't changed since the last tick --
@@ -161,6 +171,17 @@ private:
     // Last tempo value pushed to the UI, so OnIdle only sends on an actual
     // change rather than flooding the WebView message queue every tick.
     double lastSentTempo = -1.0;
+
+    // Set by OnParamChange whenever a param that affects the rhythm pattern
+    // or chord shape changes; OnIdle checks these and pushes a fresh
+    // kMsgTagPatternUpdate/kMsgTagChordUpdate, then clears the flag -- same
+    // "only send on an actual change" shape as lastSentTempo above, and same
+    // reason it's OnIdle (main thread) sending rather than OnParamChange
+    // (which can run on the audio thread for automated params). Both start
+    // true so the WebView gets its first paint of the actual pattern/chord
+    // on load, not just whatever the static HTML default markup shows.
+    bool patternDirty = true;
+    bool chordDirty = true;
 
     // Optional 24ppqn MIDI clock output for external gear (e.g. a Eurorack
     // clock/CV module) to sync to. wasTransportRunning tracks the

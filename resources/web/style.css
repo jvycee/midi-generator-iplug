@@ -231,6 +231,31 @@ html, body {
    mini-pill pattern used for badges below. */
 .pill-option.active { background: var(--accent-coral); color: var(--bg); }
 
+/* --- step grid (live pattern shape, C++-computed -- see kMsgTagPatternUpdate) --- */
+
+.step-grid { display: flex; gap: 3px; width: 100%; }
+.step-cell {
+  flex: 1 1 0;
+  min-width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+}
+.step-cell.active {
+  background: var(--accent-wash-strong);
+  border-color: var(--accent-sage);
+  box-shadow: 0 0 4px var(--accent-glow-soft);
+}
+/* --- chord readout (live chord shape, C++-computed -- see kMsgTagChordUpdate) --- */
+
+.chord-readout {
+  margin: 2px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--accent-sage);
+}
+
 /* --- toggle row / switch --- */
 
 .toggle-row { display: flex; align-items: center; justify-content: space-between; width: 100%; }

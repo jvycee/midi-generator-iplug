@@ -68,6 +68,8 @@
 
       <div class="pill-selector" data-param="kParamSequenceMode" data-options="Euclidean,Density,Chaos"></div>
 
+      <div class="step-grid" id="step-grid" title="The pattern shape as configured. Only shown in Euclidean mode -- Density/Chaos trigger each step probabilistically rather than off a fixed shape, so there's no shape to show in those modes."></div>
+
       <div class="toggle-row">
         <p class="toggle-label">Invert Pattern</p>
         <div class="switch" data-param="kParamPatternInvert" data-on-label="Inverted" data-off-label="Normal"></div>
@@ -116,6 +118,8 @@
         <div class="knob knob-sm" data-param="kParamChordVoices" data-label="Voices" title="On chord types with fewer intervals than Voices asks for, extra voices are octave doublings of the existing tones, not new 9th/11th/13th extensions -- pick an already-extended Chord Type (Maj9, Dom9, Min11, ...) for real added tensions."></div>
         <div class="knob knob-sm" data-param="kParamArpMode" data-label="Arp" title="Steps through the chord one note per hit instead of firing it all at once. Has no effect in Monophonic Output mode -- there's only one note to step through."></div>
       </div>
+
+      <p class="chord-readout mono" id="chord-readout" title="The chord's home position (scale degree 0), as currently configured -- not wherever harmony drift's live wander currently is.">C4</p>
 
       <div class="toggle-row" title="Scale: every chord tone is snapped into the current key, which can change the chord's quality. Chord: the chord keeps its exact notes, even if that steps outside the key.">
         <p class="toggle-label">Chord Priority</p>
