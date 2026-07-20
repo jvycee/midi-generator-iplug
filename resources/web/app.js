@@ -59,6 +59,7 @@ const PARAMS = [
   /* 51 */ { name: 'kParamFreeze',          type: 'bool',    def: 0 },
   /* 52 */ { name: 'kParamExportVariations',type: 'int',     min: 1, max: 8, def: 1 },
   /* 53 */ { name: 'kParamArpMode',         type: 'enum',    options: ['Off','Up','Down','Up-Down'], def: 0 },
+  /* 54 */ { name: 'kParamDeterministicExport', type: 'bool', def: 0 },
 ];
 
 const NAME_TO_IDX = {};

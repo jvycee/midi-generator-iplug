@@ -64,6 +64,7 @@ enum EParams
   kParamFreeze,            // stop triggering new hits, let whatever's ringing continue -- see ProcessBlock
   kParamExportVariations,  // how many independently-reseeded takes to render on export; 1 = current single-file behavior
   kParamArpMode,           // Off/Up/Down/Up-Down -- steps through the chord one note per hit instead of firing it all at once (see ArpMode)
+  kParamDeterministicExport, // off (default) = current behavior (variation 0 = live track state, others = std::random_device reseed); on = every variation reseeds from a fixed seed, so re-exporting the same settings is byte-for-byte reproducible
   kNumParams
 };
 
@@ -246,4 +247,9 @@ private:
     // "fresh take" semantics either way. Not audio-thread code in either
     // caller, so std::random_device is fine.
     static void ReseedTrack(EuclideanTrack& t);
+
+    // Same reset as ReseedTrack, but seeded from a fixed value instead of
+    // std::random_device -- see kParamDeterministicExport. Used only by
+    // export, never by Reroll (which is supposed to actually be random).
+    static void ReseedTrackDeterministic(EuclideanTrack& t, uint32_t seed);
 };

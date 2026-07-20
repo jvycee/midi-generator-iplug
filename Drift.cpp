@@ -82,6 +82,7 @@ Drift::Drift(const InstanceInfo& info)
     GetParam(kParamGlobalTranspose)->InitInt("Transpose", 0, -24, 24);
     GetParam(kParamExportBars)->InitInt("Export Bars", 4, 1, 16);
     GetParam(kParamExportVariations)->InitInt("Variations", 1, 1, 8);
+    GetParam(kParamDeterministicExport)->InitBool("Deterministic Export", false);
     GetParam(kParamMonoMode)->InitBool("Mono", false);
     GetParam(kParamMaxVoices)->InitInt("Max Voices", 8, 1, 16); // global cap across overlapping hits, not per-chord
     GetParam(kParamArpMode)->InitEnum("Arp Mode", (int)ArpMode::Off, { "Off", "Up", "Down", "Up-Down" });
@@ -393,6 +394,20 @@ void Drift::ReseedTrack(EuclideanTrack& t)
     t.chaosX = 0.1 + (double)(rd() % 8000) / 10000.0; // fresh value in [0.1, 0.9), clear of both fixed points
     t.arpIndex = 0;
     t.arpDirection = 1; // same reasoning as scaleDegree above -- restart the arp cursor at a known position, not mid-cycle
+}
+
+// static
+void Drift::ReseedTrackDeterministic(EuclideanTrack& t, uint32_t seed)
+{
+    t.rngState = seed != 0 ? seed : 0x9E3779B9u; // xorshift32 guards 0 too, but avoid relying on it twice
+    t.scaleDegree = 0;
+    // One xorshift32 step from the seed, mapped into the same [0.1, 0.9)
+    // range ReseedTrack uses -- keeps Chaos mode exploring the same
+    // well-behaved region of the logistic map regardless of which reseed
+    // path produced the state.
+    t.chaosX = 0.1 + (double)(xorshift32(t.rngState) % 8000) / 10000.0;
+    t.arpIndex = 0;
+    t.arpDirection = 1;
 }
 
 void Drift::OnIdle()
@@ -749,17 +764,31 @@ WDL_String Drift::ExportPatternAsMidiFile()
     // no need to reveal each individually.
     WDL_String firstPath;
 
+    bool deterministic = GetParam(kParamDeterministicExport)->Bool();
+    // Arbitrary fixed base seed ('Drft' as bytes) -- only its fixed-ness
+    // matters, not its value. +v gives each variation a distinct but still
+    // fully reproducible starting point.
+    constexpr uint32_t kDeterministicExportBaseSeed = 0x44726674u;
+
     for (int v = 0; v < variations; ++v)
     {
         EuclideanTrack trackCopy = track;
 
-        // Variation 0 always exports exactly the live track's current
-        // state -- unreseeded -- so "1 variation" (the default) is byte-
-        // for-byte the same export this always produced, untouched by this
-        // feature. Only variations beyond the first get a fresh reseed
-        // (same as Reroll), applied to this offline copy only -- the
-        // actually-playing track is never touched by export.
-        if (v > 0)
+        if (deterministic)
+        {
+            // Freezes RNG-driven elements (Chaos mode, harmony drift,
+            // probability) to a fixed, reproducible starting point instead
+            // of whatever the live track has wandered to during playback --
+            // re-exporting the same settings gives byte-identical output.
+            ReseedTrackDeterministic(trackCopy, kDeterministicExportBaseSeed + (uint32_t)v);
+        }
+        // Variation 0 (non-deterministic mode) always exports exactly the
+        // live track's current state -- unreseeded -- so "1 variation" (the
+        // default) is byte-for-byte the same export this always produced,
+        // untouched by this feature. Only variations beyond the first get a
+        // fresh reseed (same as Reroll), applied to this offline copy only --
+        // the actually-playing track is never touched by export.
+        else if (v > 0)
             ReseedTrack(trackCopy);
 
         auto bytes = MidiExport::renderPatternToSMF(trackCopy, globalParams, bpm, numBars, modSlots, 8, maxVoices);

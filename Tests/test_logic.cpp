@@ -512,6 +512,37 @@ static void TestExportArpMode()
     CHECK(onCountChord == 48);
 }
 
+// Underlying invariant kParamDeterministicExport (Drift.cpp) depends on:
+// renderPatternToSMF is a pure function of its EuclideanTrack argument, with
+// no external/hidden state (wall clock, global RNG, etc.) leaking in. Uses
+// Chaos mode specifically -- it's the export path most likely to have picked
+// up an accidental external dependency, since it evolves a floating-point
+// logistic-map value every hit.
+static void TestExportDeterministicGivenSameState()
+{
+    GlobalParams gp;
+    ModSlot slots[1];
+
+    EuclideanTrack track;
+    track.steps = 16;
+    track.pulses = 11;
+    track.seqMode = SequenceMode::Chaos;
+    track.chaosAmount = 0.8f;
+    track.chaosX = 0.37; // fixed starting point, standing in for ReseedTrackDeterministic's seeding
+    track.rngState = 0x44726674u;
+    track.chordType = ChordType::Minor7th;
+    track.arpMode = ArpMode::UpDown;
+    rebuildTrackPattern(track);
+
+    EuclideanTrack trackCopy = track; // identical starting state, separate struct
+
+    auto smfA = MidiExport::renderPatternToSMF(track, gp, 120.0, 2, slots, 0, 8);
+    auto smfB = MidiExport::renderPatternToSMF(trackCopy, gp, 120.0, 2, slots, 0, 8);
+
+    CHECK(smfA.size() == smfB.size());
+    CHECK(smfA == smfB);
+}
+
 static void TestExportRatchetOverlapClean()
 {
     GlobalParams gp; // no swing, hard clock
@@ -579,6 +610,7 @@ int main()
     TestRatchet();
     TestExportNoSamePitchOverlap();
     TestExportArpMode();
+    TestExportDeterministicGivenSameState();
     TestExportRatchetOverlapClean();
 
     if (gFailures == 0)
