@@ -110,10 +110,11 @@
         </div>
       </div>
 
-      <div class="knob-grid knob-grid-3">
+      <div class="knob-grid knob-grid-4">
         <div class="knob knob-sm" data-param="kParamChordType" data-label="Chord Type"></div>
         <div class="knob knob-sm" data-param="kParamVoicing" data-label="Voicing"></div>
         <div class="knob knob-sm" data-param="kParamChordVoices" data-label="Voices" title="On chord types with fewer intervals than Voices asks for, extra voices are octave doublings of the existing tones, not new 9th/11th/13th extensions -- pick an already-extended Chord Type (Maj9, Dom9, Min11, ...) for real added tensions."></div>
+        <div class="knob knob-sm" data-param="kParamArpMode" data-label="Arp" title="Steps through the chord one note per hit instead of firing it all at once. Has no effect in Monophonic Output mode -- there's only one note to step through."></div>
       </div>
 
       <div class="toggle-row" title="Scale: every chord tone is snapped into the current key, which can change the chord's quality. Chord: the chord keeps its exact notes, even if that steps outside the key.">
