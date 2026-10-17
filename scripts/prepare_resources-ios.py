@@ -14,9 +14,11 @@ projectpath = os.path.abspath(os.path.join(scriptpath, os.pardir))
 
 IPLUG2_ROOT = "../../.."
 
+sys.path.insert(0, scriptpath)
 sys.path.insert(0, os.path.join(os.getcwd(), IPLUG2_ROOT + '/Scripts'))
 
 from parse_config import parse_config, parse_xcconfig
+from plug_identity import PlugIdentityError, install_fourccs
 
 def copy_resources_to_destination(projectpath, dst, label=""):
   """Copy image and font resources from project to destination folder."""
@@ -40,6 +42,11 @@ def main():
        copy_resources_to_destination(projectpath, dst)
 
   config = parse_config(projectpath)
+  try:
+    install_fourccs(config, projectpath)
+  except PlugIdentityError as error:
+    print(error, file=sys.stderr)
+    sys.exit(1)
   xcconfig = parse_xcconfig(os.path.join(os.getcwd(), IPLUG2_ROOT +  '/common-ios.xcconfig'))
 
   CFBundleGetInfoString = config['BUNDLE_NAME'] + " v" + config['FULL_VER_STR'] + " " + config['PLUG_COPYRIGHT_STR']
