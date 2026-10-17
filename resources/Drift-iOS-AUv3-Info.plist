@@ -34,13 +34,13 @@
 					<key>factoryFunction</key>
 					<string>IPlugAUViewController_vDrift</string>
 					<key>manufacturer</key>
-					<string>Acme</string>
+					<string>Jvce</string>
 					<key>name</key>
 					<string>Jvycee: Drift</string>
 					<key>sandboxSafe</key>
 					<true/>
 					<key>subtype</key>
-					<string>PmBl</string>
+					<string>dm39</string>
 					<key>tags</key>
 					<array>
 						<string>Synth</string>
