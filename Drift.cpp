@@ -209,11 +209,13 @@ void Drift::OnParamChange(int paramIdx)
         if (paramIdx == kModSlotParams[i].srcParam)
         {
             modSlots[i].source = static_cast<ModSource>(GetParam(paramIdx)->Int());
+            lastSentCCValue[i] = kModCcNeverSent;
             return;
         }
         if (paramIdx == kModSlotParams[i].ccParam)
         {
             modSlots[i].ccNumber = GetParam(paramIdx)->Int();
+            lastSentCCValue[i] = kModCcNeverSent;
             return;
         }
     }
@@ -436,6 +438,8 @@ void Drift::ReseedTrack(EuclideanTrack& t)
     std::random_device rd;
     t.rngState = rd();
     if (t.rngState == 0) t.rngState = 0x9E3779B9u; // xorshift32 guards 0 too, but avoid relying on it twice
+    t.modRandomState = rd();
+    if (t.modRandomState == 0) t.modRandomState = 0x6C8E944Du;
     t.scaleDegree = 0;
     t.chaosX = 0.1 + (double)(rd() % 8000) / 10000.0; // fresh value in [0.1, 0.9), clear of both fixed points
     t.arpIndex = 0;
@@ -446,6 +450,10 @@ void Drift::ReseedTrack(EuclideanTrack& t)
 void Drift::ReseedTrackDeterministic(EuclideanTrack& t, uint32_t seed)
 {
     t.rngState = seed != 0 ? seed : 0x9E3779B9u; // xorshift32 guards 0 too, but avoid relying on it twice
+    // Separate from rngState so this does not steal the xorshift step that
+    // chaosX is derived from below.
+    uint32_t modSeed = seed ^ 0x6C8E944Du;
+    t.modRandomState = modSeed != 0 ? modSeed : 0x6C8E944Du;
     t.scaleDegree = 0;
     // One xorshift32 step from the seed, mapped into the same [0.1, 0.9)
     // range ReseedTrack uses -- keeps Chaos mode exploring the same
@@ -519,7 +527,7 @@ void Drift::OnReset()
     pendingNotes.clear();
     ccUpdateSamplesRemaining = 0;
     clockSamplesRemaining = 0;
-    wasTransportRunning = false;
+    clockArm.started = false;
 }
 
 void Drift::SendModCCs()
@@ -535,7 +543,7 @@ void Drift::SendModCCs()
         // would otherwise resend an unchanged value every tick -- flooding
         // whatever's downstream with identical CC messages.
         int quantized = std::clamp((int)(value * 127.0f), 0, 127);
-        if (slot.source != ModSource::Random && quantized == lastSentCCValue[i])
+        if (!modSlotShouldSend(slot.source, quantized, lastSentCCValue[i]))
             continue;
         lastSentCCValue[i] = quantized;
 
@@ -648,13 +656,13 @@ void Drift::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 
     bool transportRunning = GetTransportIsRunning();
 
-    if (sendClock && transportRunning != wasTransportRunning)
+    int clockEdge = takeMidiClockEdge(clockArm, sendClock, transportRunning);
+    if (clockEdge != 0)
     {
-        IMidiMsg edgeMsg(0, transportRunning ? (uint8_t)0xFA /* Start */ : (uint8_t)0xFC /* Stop */);
+        IMidiMsg edgeMsg(0, (uint8_t)clockEdge); // 0xFA Start or 0xFC Stop
         SendMidiMsg(edgeMsg);
-        if (transportRunning) clockSamplesRemaining = 0; // fire the first tick right away
+        if (clockEdge == 0xFA) clockSamplesRemaining = 0; // fire the first tick right away
     }
-    wasTransportRunning = transportRunning;
 
     if (!transportRunning) {
         last16thNote = -1;
@@ -715,12 +723,13 @@ void Drift::ProcessStep(int absoluteStep, double bpm, double sampleRate)
     int loopIndex = absoluteStep / track.steps;
     int rotationDriftSteps = track.rotationDriftPeriod > 0 ? (absoluteStep / track.rotationDriftPeriod) : 0;
 
-    // Bail before any RNG draw (trig/density/chaos/probability) when frozen
-    // or trig-gated, so Freeze genuinely pauses the generative state, not
-    // just playback -- whatever's already ringing in activeNotes/pendingNotes
+    // Bail before any sequence-RNG draw (trig/density/chaos/probability) when
+    // frozen or trig-gated, so Freeze genuinely pauses the generative state,
+    // not just playback -- whatever's already ringing in activeNotes/pendingNotes
     // still decays normally, untouched. Order matters: evaluateStepTrigger has
-    // side effects (advances Chaos/RNG), so the cheap gates must short-circuit
-    // ahead of it, exactly as the original `!freeze && trig && step` did.
+    // side effects (advances Chaos/rngState), so the cheap gates must short-circuit
+    // ahead of it. ModSource::Random draws modRandomState, not rngState, so the
+    // CC ticker can keep moving during Freeze without advancing this stream.
     if (freeze || !evaluateTrigCondition(track, loopIndex) || !evaluateStepTrigger(track, stepIndex, rotationDriftSteps))
         return;
 

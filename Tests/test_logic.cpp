@@ -638,6 +638,83 @@ static void TestExportRatchetOverlapClean()
     CHECK(ons > 0);
 }
 
+static void TestMidiClockArm()
+{
+    // Transport alone never arms the clock.
+    MidiClockArm off;
+    CHECK(takeMidiClockEdge(off, false, false) == 0);
+    CHECK(takeMidiClockEdge(off, false, true) == 0);
+    CHECK(takeMidiClockEdge(off, false, false) == 0);
+    CHECK(!off.started);
+
+    // Enabling Send Clock while transport is already running must Start,
+    // and disabling it before Stop must Stop. Steady running emits neither.
+    MidiClockArm mid;
+    CHECK(takeMidiClockEdge(mid, false, true) == 0);
+    CHECK(takeMidiClockEdge(mid, true, true) == 0xFA);
+    CHECK(mid.started);
+    CHECK(takeMidiClockEdge(mid, true, true) == 0);
+    CHECK(takeMidiClockEdge(mid, false, true) == 0xFC);
+    CHECK(!mid.started);
+    CHECK(takeMidiClockEdge(mid, false, true) == 0);
+
+    // Classic play/stop with Send Clock already on: one Start, one Stop.
+    MidiClockArm play;
+    CHECK(takeMidiClockEdge(play, true, false) == 0);
+    CHECK(takeMidiClockEdge(play, true, true) == 0xFA);
+    CHECK(takeMidiClockEdge(play, true, true) == 0);
+    CHECK(takeMidiClockEdge(play, true, false) == 0xFC);
+    CHECK(!play.started);
+
+    // Clock and transport dropping in the same observation owe one Stop.
+    MidiClockArm both;
+    CHECK(takeMidiClockEdge(both, true, true) == 0xFA);
+    CHECK(takeMidiClockEdge(both, false, false) == 0xFC);
+    CHECK(takeMidiClockEdge(both, false, false) == 0);
+}
+
+static void TestRandomModLeavesSequenceRng()
+{
+    EuclideanTrack t;
+    t.rngState = 0x12345678u;
+    t.modRandomState = 0x9ABCDEF0u;
+    const uint32_t sequenceBefore = t.rngState;
+
+    float a = evaluateModSource(t, ModSource::Random);
+    float b = evaluateModSource(t, ModSource::Random);
+    CHECK(t.rngState == sequenceBefore);
+    CHECK(t.modRandomState != 0x9ABCDEF0u);
+    CHECK(a >= 0.0f && a < 1.0f);
+    CHECK(b >= 0.0f && b < 1.0f);
+
+    // The sequence stream still advances when a musical draw asks it to.
+    uint32_t advanced = sequenceBefore;
+    (void)randUnit01(advanced);
+    CHECK(advanced != sequenceBefore);
+
+    // Non-random sources do not touch either stream.
+    uint32_t modBefore = t.modRandomState;
+    (void)evaluateModSource(t, ModSource::Velocity);
+    (void)evaluateModSource(t, ModSource::Gate);
+    CHECK(t.rngState == sequenceBefore);
+    CHECK(t.modRandomState == modBefore);
+}
+
+static void TestModCcIdentityNotSuppressed()
+{
+    CHECK(!modSlotShouldSend(ModSource::Off, 10, kModCcNeverSent));
+    CHECK(modSlotShouldSend(ModSource::Random, 40, 40));
+    CHECK(!modSlotShouldSend(ModSource::Velocity, 64, 64));
+    CHECK(modSlotShouldSend(ModSource::Velocity, 65, 64));
+
+    // OnParamChange assigns kModCcNeverSent when source or CC number changes.
+    // The same byte must then go out on the new identity.
+    int lastSent = 64;
+    lastSent = kModCcNeverSent;
+    CHECK(modSlotShouldSend(ModSource::Velocity, 64, lastSent));
+    CHECK(modSlotShouldSend(ModSource::Gate, 0, kModCcNeverSent));
+}
+
 int main()
 {
     TestEuclideanPatterns();
@@ -661,6 +738,9 @@ int main()
     TestExportArpMode();
     TestExportDeterministicGivenSameState();
     TestExportRatchetOverlapClean();
+    TestMidiClockArm();
+    TestRandomModLeavesSequenceRng();
+    TestModCcIdentityNotSuppressed();
 
     if (gFailures == 0)
         std::printf("All tests passed.\n");

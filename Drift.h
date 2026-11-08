@@ -186,10 +186,10 @@ private:
     bool chordDirty = true;
 
     // Optional 24ppqn MIDI clock output for external gear (e.g. a Eurorack
-    // clock/CV module) to sync to. wasTransportRunning tracks the
-    // stopped->running edge so we send Start/Stop at the right moments.
+    // clock/CV module) to sync to. clockArm remembers whether Start has been
+    // sent, so Stop/Start follow sendClock and transport together.
     int clockSamplesRemaining = 0;
-    bool wasTransportRunning = false;
+    MidiClockArm clockArm;
 
     // Cached from kParamSendClock/kParamMaxVoices via OnParamChange -- every
     // other param ProcessBlock reads is cached the same way; these two were

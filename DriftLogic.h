@@ -530,6 +530,12 @@ struct EuclideanTrack
     float chaosAmount    = 0.5f;   // Chaos mode: 0..1 -> logistic-map r in the chaotic band
     double chaosX         = 0.6180339887; // logistic-map state (golden-ratio conjugate avoids the 0.5 fixed point)
     uint32_t rngState     = 0x9E3779B9u;
+    // ModSource::Random only. The ~20ms CC ticker draws this whenever
+    // transport is running, including while Freeze is on. It is a separate
+    // stream so those draws do not advance rngState, which Density,
+    // probability, harmony drift, humanize, and soft clock consume, and
+    // which Freeze promises to leave paused.
+    uint32_t modRandomState = 0x6C8E944Du;
 
     // Harmony drift: scaleDegree is the track's position in the current
     // key/scale (0 = tonic). driftAmount is the per-hit chance it steps by
@@ -857,7 +863,7 @@ enum class ModSource : int
     Probability,
     SequenceAmount, // the Density/Chaos knob, whichever one is active
     HarmonyDrift,
-    Random,         // fresh random draw per hit -- a wandering modulation source
+    Random,         // dedicated RNG stream; the CC ticker draws it continuously, and a hit draws it too. Does not advance rngState.
     Count
 };
 
@@ -884,7 +890,41 @@ inline float evaluateModSource(EuclideanTrack& t, ModSource source)
         case ModSource::Probability:    return t.probability;
         case ModSource::SequenceAmount: return t.seqMode == SequenceMode::Chaos ? t.chaosAmount : t.density;
         case ModSource::HarmonyDrift:   return t.driftAmount;
-        case ModSource::Random:         return randUnit01(t.rngState);
+        case ModSource::Random:         return randUnit01(t.modRandomState);
         default:                        return 0.0f;
     }
+}
+
+// lastSent < 0 means this slot has never sent (or its source/CC identity
+// changed). Random always emits: it is supposed to move. Every other source
+// suppresses an unchanged 0-127 byte so the 50Hz ticker does not flood the
+// wire. Callers invalidate lastSent when the CC number or source changes;
+// otherwise a new CC would stay silent until the byte happened to change.
+inline bool modSlotShouldSend(ModSource source, int quantized, int lastSent)
+{
+    if (source == ModSource::Off) return false;
+    if (source == ModSource::Random) return true;
+    return quantized != lastSent;
+}
+
+inline constexpr int kModCcNeverSent = -1;
+
+// MIDI realtime clock arming. The clock is active only while the user has
+// asked to send it and the host transport is running. Start (0xFA) and
+// Stop (0xFC) follow that pair, so enabling Send Clock mid-playback or
+// disabling it before transport stops still brackets the tick stream.
+// Returns 0 when no realtime edge is due.
+struct MidiClockArm
+{
+    bool started = false;
+};
+
+inline int takeMidiClockEdge(MidiClockArm& arm, bool sendClock, bool transportRunning)
+{
+    bool want = sendClock && transportRunning;
+    int edge = 0;
+    if (want && !arm.started) edge = 0xFA;
+    else if (!want && arm.started) edge = 0xFC;
+    arm.started = want;
+    return edge;
 }
