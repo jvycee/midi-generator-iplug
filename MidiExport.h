@@ -141,6 +141,10 @@ inline std::vector<uint8_t> renderPatternToSMF(EuclideanTrack track, const Globa
         int ratchetSliceTicks = std::max(1, ratchetSpanTicks / ratchetCount);
         int ratchetGateTicks = std::max(1, (int)(ratchetSliceTicks * track.gate));
 
+        // Random draws modRandomState here, after this step's musical RNG
+        // draws. Random-enabled files therefore differ, on purpose, from
+        // older builds that shared one stream. This writer emits one CC per
+        // hit, not the live ~50 Hz ticker.
         for (int mi = 0; mi < numModSlots; ++mi)
         {
             const ModSlot& slot = modSlots[mi];
