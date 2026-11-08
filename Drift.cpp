@@ -209,13 +209,13 @@ void Drift::OnParamChange(int paramIdx)
         if (paramIdx == kModSlotParams[i].srcParam)
         {
             modSlots[i].source = static_cast<ModSource>(GetParam(paramIdx)->Int());
-            lastSentCCValue[i] = kModCcNeverSent;
+            invalidateModSlotCcCache(lastSentCCValue[i]);
             return;
         }
         if (paramIdx == kModSlotParams[i].ccParam)
         {
             modSlots[i].ccNumber = GetParam(paramIdx)->Int();
-            lastSentCCValue[i] = kModCcNeverSent;
+            invalidateModSlotCcCache(lastSentCCValue[i]);
             return;
         }
     }
@@ -337,7 +337,8 @@ void Drift::OnParamChange(int paramIdx)
             track.velocity = (float)(GetParam(kParamVelocity)->Value() / 100.);
             break;
         case kParamMidiChannel:
-            track.midiChannel = GetParam(kParamMidiChannel)->Int();
+            applyMidiChannelChange(track.midiChannel, GetParam(kParamMidiChannel)->Int(),
+                                   lastSentCCValue, 8);
             break;
         case kParamGlobalTranspose:
             globalParams.globalTranspose = GetParam(kParamGlobalTranspose)->Int();
@@ -543,12 +544,12 @@ void Drift::SendModCCs()
         // would otherwise resend an unchanged value every tick -- flooding
         // whatever's downstream with identical CC messages.
         int quantized = std::clamp((int)(value * 127.0f), 0, 127);
-        if (!modSlotShouldSend(slot.source, quantized, lastSentCCValue[i]))
-            continue;
-        lastSentCCValue[i] = quantized;
+        ModCcEmission emitted = commitModCcOnChannel(slot.source, slot.ccNumber, quantized,
+                                                     track.midiChannel, lastSentCCValue[i]);
+        if (!emitted.sent) continue;
 
         IMidiMsg ccMsg;
-        ccMsg.MakeControlChangeMsg(static_cast<IMidiMsg::EControlChangeMsg>(slot.ccNumber), value, track.midiChannel - 1);
+        ccMsg.MakeControlChangeMsg(static_cast<IMidiMsg::EControlChangeMsg>(emitted.ccNumber), value, emitted.channel - 1);
         SendMidiMsg(ccMsg);
     }
 }

@@ -707,12 +707,176 @@ static void TestModCcIdentityNotSuppressed()
     CHECK(!modSlotShouldSend(ModSource::Velocity, 64, 64));
     CHECK(modSlotShouldSend(ModSource::Velocity, 65, 64));
 
-    // OnParamChange assigns kModCcNeverSent when source or CC number changes.
-    // The same byte must then go out on the new identity.
+    // Same production helper OnParamChange calls for a source or CC-number edit.
     int lastSent = 64;
-    lastSent = kModCcNeverSent;
-    CHECK(modSlotShouldSend(ModSource::Velocity, 64, lastSent));
-    CHECK(modSlotShouldSend(ModSource::Gate, 0, kModCcNeverSent));
+    invalidateModSlotCcCache(lastSent);
+    CHECK(lastSent == kModCcNeverSent);
+    CHECK(commitModCcOnChannel(ModSource::Velocity, 1, 64, 1, lastSent).sent);
+    CHECK(!commitModCcOnChannel(ModSource::Velocity, 1, 64, 1, lastSent).sent);
+}
+
+// Q on channel 1, then only the MIDI channel changes to 2: the same Q is
+// sent once on channel 2 and suppressed after that. Same-channel writes do
+// not clear the cache. Off stays silent. Random is never suppressed.
+static void TestMidiChannelClearsEveryCcCache()
+{
+    int channel = 1;
+    int lastSent[8];
+    for (int i = 0; i < 8; ++i) lastSent[i] = kModCcNeverSent;
+
+    const int Q = 80;
+    ModCcEmission first = commitModCcOnChannel(ModSource::Velocity, 1, Q, channel, lastSent[0]);
+    CHECK(first.sent);
+    CHECK(first.channel == 1);
+    CHECK(first.byteValue == Q);
+    CHECK(!commitModCcOnChannel(ModSource::Velocity, 1, Q, channel, lastSent[0]).sent);
+
+    ModCcEmission gate = commitModCcOnChannel(ModSource::Gate, 11, 40, channel, lastSent[1]);
+    CHECK(gate.sent);
+    CHECK(gate.channel == 1);
+    CHECK(!commitModCcOnChannel(ModSource::Gate, 11, 40, channel, lastSent[1]).sent);
+
+    CHECK(!commitModCcOnChannel(ModSource::Off, 2, Q, channel, lastSent[2]).sent);
+    CHECK(commitModCcOnChannel(ModSource::Random, 3, 15, channel, lastSent[3]).sent);
+    CHECK(commitModCcOnChannel(ModSource::Random, 3, 15, channel, lastSent[3]).sent);
+
+    // Editing the parameter back to the current channel must not resend Q.
+    CHECK(!applyMidiChannelChange(channel, 1, lastSent, 8));
+    CHECK(channel == 1);
+    CHECK(!commitModCcOnChannel(ModSource::Velocity, 1, Q, channel, lastSent[0]).sent);
+    CHECK(!commitModCcOnChannel(ModSource::Off, 2, Q, channel, lastSent[2]).sent);
+
+    CHECK(applyMidiChannelChange(channel, 2, lastSent, 8));
+    CHECK(channel == 2);
+
+    ModCcEmission onNew = commitModCcOnChannel(ModSource::Velocity, 1, Q, channel, lastSent[0]);
+    CHECK(onNew.sent);
+    CHECK(onNew.channel == 2);
+    CHECK(onNew.ccNumber == 1);
+    CHECK(onNew.byteValue == Q);
+    CHECK(!commitModCcOnChannel(ModSource::Velocity, 1, Q, channel, lastSent[0]).sent);
+
+    ModCcEmission gateOnNew = commitModCcOnChannel(ModSource::Gate, 11, 40, channel, lastSent[1]);
+    CHECK(gateOnNew.sent);
+    CHECK(gateOnNew.channel == 2);
+    CHECK(!commitModCcOnChannel(ModSource::Gate, 11, 40, channel, lastSent[1]).sent);
+
+    CHECK(!commitModCcOnChannel(ModSource::Off, 2, Q, channel, lastSent[2]).sent);
+    CHECK(commitModCcOnChannel(ModSource::Random, 3, 15, channel, lastSent[3]).sent);
+    CHECK(commitModCcOnChannel(ModSource::Random, 3, 15, channel, lastSent[3]).sent);
+}
+
+// Random-enabled SMF bytes are intentionally not the pre-decoupling stream:
+// Random no longer advances rngState, so note output matches a render with
+// that slot Off, while CC bytes come from modRandomState. Two renders of the
+// same state still match, and the live track is not mutated (by-value render).
+static void TestRandomExportDeterministicLeavesLiveTrack()
+{
+    GlobalParams gp;
+    ModSlot randomSlots[1];
+    randomSlots[0].source = ModSource::Random;
+    randomSlots[0].ccNumber = 1;
+
+    EuclideanTrack live;
+    live.steps = 16;
+    live.pulses = 8;
+    live.seqMode = SequenceMode::Chaos;
+    live.chaosAmount = 0.8f;
+    live.chaosX = 0.37;
+    live.rngState = 0x44726674u;
+    live.modRandomState = 0x44726674u ^ 0x6C8E944Du;
+    live.monoMode = true;
+    live.driftAmount = 0.0f;
+    live.probability = 1.0f;
+    rebuildTrackPattern(live);
+
+    const uint32_t rng = live.rngState;
+    const uint32_t mod = live.modRandomState;
+    const double chaos = live.chaosX;
+    const int degree = live.scaleDegree;
+    const int arp = live.arpIndex;
+    const uint32_t bits = live.patternBits;
+
+    auto withRandom = MidiExport::renderPatternToSMF(live, gp, 120.0, 2, randomSlots, 1, 8);
+    CHECK(live.rngState == rng);
+    CHECK(live.modRandomState == mod);
+    CHECK(live.chaosX == chaos);
+    CHECK(live.scaleDegree == degree);
+    CHECK(live.arpIndex == arp);
+    CHECK(live.patternBits == bits);
+
+    auto again = MidiExport::renderPatternToSMF(live, gp, 120.0, 2, randomSlots, 1, 8);
+    CHECK(withRandom == again);
+    CHECK(live.rngState == rng);
+    CHECK(live.modRandomState == mod);
+    CHECK(live.chaosX == chaos);
+
+    EuclideanTrack silentCopy = live;
+    auto withoutRandom = MidiExport::renderPatternToSMF(silentCopy, gp, 120.0, 2, randomSlots, 0, 8);
+    CHECK(silentCopy.rngState == rng);
+    CHECK(silentCopy.modRandomState == mod);
+
+    auto readVarLen = [](const std::vector<uint8_t>& smf, size_t& p) -> uint32_t {
+        uint32_t v = 0;
+        while (p < smf.size()) {
+            uint8_t b = smf[p++];
+            v = (v << 7) | (b & 0x7F);
+            if (!(b & 0x80)) break;
+        }
+        return v;
+    };
+    auto collect = [&](const std::vector<uint8_t>& smf, bool wantCc) {
+        std::vector<int> got;
+        size_t i = 22;
+        while (i < smf.size()) {
+            (void)readVarLen(smf, i);
+            if (i >= smf.size()) break;
+            uint8_t status = smf[i++];
+            if (status == 0xFF) {
+                if (i >= smf.size()) break;
+                uint8_t type = smf[i++];
+                uint32_t len = readVarLen(smf, i);
+                if (type == 0x2F) break;
+                i += len;
+            } else if ((status & 0xF0) == 0xB0) {
+                uint8_t cc = smf[i++];
+                uint8_t val = smf[i++];
+                if (wantCc) {
+                    got.push_back(status);
+                    got.push_back(cc);
+                    got.push_back(val);
+                }
+            } else if ((status & 0xF0) == 0x90 || (status & 0xF0) == 0x80) {
+                uint8_t d1 = smf[i++];
+                uint8_t d2 = smf[i++];
+                if (!wantCc) {
+                    got.push_back(status);
+                    got.push_back(d1);
+                    got.push_back(d2);
+                }
+            } else {
+                break;
+            }
+        }
+        return got;
+    };
+
+    auto notesRandom = collect(withRandom, false);
+    auto notesSilent = collect(withoutRandom, false);
+    CHECK(notesRandom == notesSilent);
+    CHECK(!notesRandom.empty());
+
+    auto ccs = collect(withRandom, true);
+    CHECK(ccs.size() >= 6);
+    CHECK(ccs.size() % 3 == 0);
+    bool moved = false;
+    for (size_t n = 0; n < ccs.size(); n += 3) {
+        CHECK(ccs[n] == 0xB0);  // channel 1
+        CHECK(ccs[n + 1] == 1); // CC1
+        if (n > 0 && ccs[n + 2] != ccs[2]) moved = true;
+    }
+    CHECK(moved); // dedicated stream is not a stuck byte
+    CHECK(collect(withoutRandom, true).empty());
 }
 
 int main()
@@ -741,6 +905,8 @@ int main()
     TestMidiClockArm();
     TestRandomModLeavesSequenceRng();
     TestModCcIdentityNotSuppressed();
+    TestMidiChannelClearsEveryCcCache();
+    TestRandomExportDeterministicLeavesLiveTrack();
 
     if (gFailures == 0)
         std::printf("All tests passed.\n");

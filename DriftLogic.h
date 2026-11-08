@@ -909,6 +909,49 @@ inline bool modSlotShouldSend(ModSource source, int quantized, int lastSent)
 
 inline constexpr int kModCcNeverSent = -1;
 
+// One production send decision. Updates lastSent only when a byte is emitted.
+// Off never emits. Random always emits. Any other source suppresses a repeat
+// of the same byte on the same destination.
+struct ModCcEmission
+{
+    bool sent = false;
+    int channel = 1; // 1-16, matching EuclideanTrack::midiChannel
+    int ccNumber = 0;
+    int byteValue = 0;
+};
+
+inline ModCcEmission commitModCcOnChannel(ModSource source, int ccNumber, int quantized,
+                                          int midiChannel, int& lastSent)
+{
+    ModCcEmission out;
+    out.channel = midiChannel;
+    out.ccNumber = ccNumber;
+    out.byteValue = quantized;
+    if (!modSlotShouldSend(source, quantized, lastSent)) return out;
+    lastSent = quantized;
+    out.sent = true;
+    return out;
+}
+
+// Source or CC-number edits. The numeric value may be unchanged; the slot
+// identity still changed, so the next tick must emit once.
+inline void invalidateModSlotCcCache(int& lastSent)
+{
+    lastSent = kModCcNeverSent;
+}
+
+// MIDI channel is part of the CC destination. A real change clears every
+// slot. Setting the same channel again leaves the duplicate-byte caches
+// alone, so a steady value stays suppressed on that channel.
+inline bool applyMidiChannelChange(int& midiChannel, int newChannel, int* lastSent, int slotCount)
+{
+    if (newChannel == midiChannel) return false;
+    midiChannel = newChannel;
+    for (int i = 0; i < slotCount; ++i)
+        lastSent[i] = kModCcNeverSent;
+    return true;
+}
+
 // MIDI realtime clock arming. The clock is active only while the user has
 // asked to send it and the host transport is running. Start (0xFA) and
 // Stop (0xFC) follow that pair, so enabling Send Clock mid-playback or
